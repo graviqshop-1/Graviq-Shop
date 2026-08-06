@@ -1,0 +1,6 @@
+{
+  "name": "Graviq Shop - Streaming & Social Media Growth",
+  "description": "Graviq Shop - Der Premium Shop für Twitch, YouTube, TikTok & Instagram Follower, Likes, Views und Live-Zuschauer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
