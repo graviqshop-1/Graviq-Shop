@@ -16,10 +16,9 @@ import { UserDashboard } from './components/UserDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MaintenanceOverlay } from './components/MaintenanceOverlay';
 import { BlockedOverlay } from './components/BlockedOverlay';
-import { LiveSupportWidget } from './components/LiveSupportWidget';
 import { Footer } from './components/Footer';
 import { Order } from './types';
-import { Wrench, ShieldAlert, Lock, Headphones, MessageSquare } from 'lucide-react';
+import { Wrench, ShieldAlert, Lock } from 'lucide-react';
 
 function MainShopView() {
   const { shopSettings, setAuthModalOpen, setAuthModalView, currentUser, resetModalOpen, setResetModalOpen } = useShop();
@@ -161,9 +160,6 @@ function MainShopView() {
         onOpenLiveSlider={() => setLiveSliderModalOpen(true)}
         onOpenFaq={() => setFaqModalOpen(true)}
       />
-
-      {/* Floating Interactive Live-Support Text Chat Widget */}
-      <LiveSupportWidget />
 
       {/* Live Viewer Slider Modal */}
       {liveSliderModalOpen && (

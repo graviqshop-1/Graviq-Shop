@@ -10,59 +10,9 @@ export const INITIAL_ADMIN_USER: User = {
   createdAt: '2026-01-01T00:00:00Z',
 };
 
-export const INITIAL_SUPPORT_USERS: User[] = [
-  {
-    id: 'usr_supp_1',
-    email: 'support1@graviq.shop',
-    name: 'Kevin (Graviq Supporter)',
-    role: 'support',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    createdAt: '2026-02-10T00:00:00Z',
-  },
-  {
-    id: 'usr_supp_2',
-    email: 'support2@graviq.shop',
-    name: 'Sarah (Graviq Supporter)',
-    role: 'support',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    createdAt: '2026-03-01T00:00:00Z',
-  },
-  {
-    id: 'usr_team_1',
-    email: 'team@graviq.shop',
-    name: 'Marco (Team Graviq Fulfillment)',
-    role: 'team_graviq',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    createdAt: '2026-03-05T00:00:00Z',
-  }
-];
+export const INITIAL_SUPPORT_USERS: User[] = [];
 
-export const INITIAL_PARTNER_APPLICATIONS: PartnerApplication[] = [
-  {
-    id: 'PARTNER-801',
-    applicantName: 'S3 eSport Apex Roster',
-    applicantEmail: 'sponsorship@s3esport.gg',
-    channelName: 'S3_eSport_Official',
-    platform: 'Twitch / S3 eSport',
-    followerCount: '45.000+',
-    socialLink: 'https://twitch.tv/s3esport_official',
-    message: 'Wir würden gerne als Hauptpartner von Graviq x S3 eSport Auftritte und gemeinsame Turniere bewerben!',
-    status: 'in_prüfung',
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: 'PARTNER-802',
-    applicantName: 'GamingGoddess Live',
-    applicantEmail: 'contact@gaminggoddess.de',
-    channelName: 'GamingGoddess_TV',
-    platform: 'TikTok / Twitch',
-    followerCount: '12.500',
-    socialLink: 'https://tiktok.com/@gaminggoddess_tv',
-    message: 'Suchst du Streamer für Partnerschaften? Streamer fast täglich GTA RP & Valorant.',
-    status: 'neu',
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  }
-];
+export const INITIAL_PARTNER_APPLICATIONS: PartnerApplication[] = [];
 
 export const INITIAL_SHOP_SETTINGS: ShopSettings = {
   shopEmail: 'graviq.shop@gmail.com',
@@ -88,32 +38,7 @@ export const INITIAL_SHOP_SETTINGS: ShopSettings = {
   },
 };
 
-export const INITIAL_COUPONS: Coupon[] = [
-  {
-    code: 'GRAVIQ2026',
-    discountPercent: 10,
-    active: true,
-    maxUses: 500,
-    usedCount: 42,
-    description: '10% Willkommensrabatt auf alles',
-  },
-  {
-    code: 'SOMMER20',
-    discountPercent: 20,
-    active: true,
-    maxUses: 1000,
-    usedCount: 184,
-    description: '20% Event-Rabatt im Sommer Sale',
-  },
-  {
-    code: 'STREAMER50',
-    discountPercent: 15,
-    active: true,
-    maxUses: 200,
-    usedCount: 89,
-    description: '15% für Streamer & VIP Kunden',
-  },
-];
+export const INITIAL_COUPONS: Coupon[] = [];
 
 export const INITIAL_SLIDER_CONFIGS: Record<string, LiveSliderConfig> = {
   twitch: {
