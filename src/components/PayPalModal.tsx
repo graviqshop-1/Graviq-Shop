@@ -1,351 +1,220 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useShop } from '../context/ShopContext';
-import { ShieldCheck, CheckCircle, CreditCard, Lock, Sparkles, FileText, Mail } from 'lucide-react';
-import confetti from 'canvas-confetti';
-import { Order } from '../types';
-import { InvoiceModal } from './InvoiceModal';
+import React, { useState, useEffect } from 'react';
+import { ShopProvider, useShop } from './context/ShopContext';
+import { SeasonalParticles } from './components/SeasonalParticles';
+import { Navbar } from './components/Navbar';
+import { HeroSection } from './components/HeroSection';
+import { LiveViewerSlider } from './components/LiveViewerSlider';
+import { ProductGrid } from './components/ProductGrid';
+import { PartnerSection } from './components/PartnerSection';
+import { PartnerModal } from './components/PartnerModal';
+import { CartDrawer } from './components/CartDrawer';
+import { PayPalModal } from './components/PayPalModal';
+import { AuthModal } from './components/AuthModal';
+import { AccountResetModal } from './components/AccountResetModal';
+import { FaqModal } from './components/FaqModal';
+import { UserDashboard } from './components/UserDashboard';
+import { AdminDashboard } from './components/AdminDashboard';
+import { MaintenanceOverlay } from './components/MaintenanceOverlay';
+import { BlockedOverlay } from './components/BlockedOverlay';
+import { LiveSupportWidget } from './components/LiveSupportWidget';
+import { Footer } from './components/Footer';
+import { Order } from './types';
+import { Wrench, ShieldAlert, Lock, Headphones, MessageSquare } from 'lucide-react';
 
-interface PayPalModalProps {
-  onClose: () => void;
-  onSuccess: (order: Order) => void;
-}
+function MainShopView() {
+  const { shopSettings, setAuthModalOpen, setAuthModalView, currentUser, resetModalOpen, setResetModalOpen } = useShop();
 
-declare global {
-  interface Window {
-    paypal?: any;
-  }
-}
+  // Modals state
+  const [liveSliderModalOpen, setLiveSliderModalOpen] = useState(false);
+  const [payPalModalOpen, setPayPalModalOpen] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [faqModalOpen, setFaqModalOpen] = useState(false);
+  const [showSecurityAlert, setShowSecurityAlert] = useState(false);
 
-export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) => {
-  const { cart, appliedCoupon, placeOrder, shopSettings, currentUser } = useShop();
+  const isStaff = currentUser && (currentUser.role === 'admin' || currentUser.role === 'support' || currentUser.role === 'team_graviq');
 
-  const [paymentStep, setPaymentStep] = useState<'review' | 'processing' | 'success'>('review');
-  const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
-  const [targetLink, setTargetLink] = useState<string>(cart[0]?.targetLink || '');
-  const [showInvoiceModal, setShowInvoiceModal] = useState<boolean>(false);
-
-  const [sdkLoaded, setSdkLoaded] = useState<boolean>(false);
-  const [sdkError, setSdkError] = useState<string | null>(null);
-  const buttonContainerRef = useRef<HTMLDivElement>(null);
-
-  const rawTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const couponDisc = appliedCoupon ? (rawTotal * appliedCoupon.discountPercent) / 100 : 0;
-  const seasonDisc = (rawTotal * (shopSettings.seasonDiscountPercent || 0)) / 100;
-  const finalTotal = Math.max(0, rawTotal - (couponDisc + seasonDisc));
-
-  const isAdmin = currentUser?.role === 'admin';
-  const isMaintenance = !!shopSettings.isMaintenanceMode;
-  // Test mode is ONLY active during Maintenance Mode OR when logged-in Admin sets sandbox mode
-  const isTestMode = isMaintenance || (isAdmin && shopSettings.paypalMode === 'sandbox');
-  const isLive = !isTestMode;
-  const clientId = shopSettings.paypalClientId || 'sb';
-
-  // Load PayPal SDK script dynamically
+  // Anti-Inspect / Anti-Tamper Security Protection
   useEffect(() => {
-    let scriptElement = document.getElementById('paypal-js-sdk') as HTMLScriptElement | null;
-
-    const initButtons = () => {
-      setSdkLoaded(true);
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      setShowSecurityAlert(true);
+      setTimeout(() => setShowSecurityAlert(false), 3500);
     };
 
-    if (window.paypal) {
-      initButtons();
-      return;
-    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F12 or Ctrl+Shift+I/J/C or Ctrl+U
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && ['I', 'J', 'C', 'i', 'j', 'c'].includes(e.key)) ||
+        (e.ctrlKey && ['U', 'u', 'S', 's'].includes(e.key)) ||
+        (e.metaKey && e.altKey && ['I', 'J', 'C', 'i', 'j', 'c', 'U', 'u'].includes(e.key))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowSecurityAlert(true);
+        setTimeout(() => setShowSecurityAlert(false), 3500);
+      }
+    };
 
-    if (!scriptElement) {
-      scriptElement = document.createElement('script');
-      scriptElement.id = 'paypal-js-sdk';
-      scriptElement.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=EUR`;
-      scriptElement.async = true;
-      scriptElement.onload = () => {
-        initButtons();
-      };
-      scriptElement.onerror = () => {
-        setSdkError('PayPal SDK konnte nicht geladen werden.');
-      };
-      document.body.appendChild(scriptElement);
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const handleOrderSuccess = (order: Order) => {
+    // Optionally open dashboard to order tab
+    setDashboardOpen(true);
+  };
+
+  const handleOpenSupport = () => {
+    if (!currentUser) {
+      setAuthModalView('login');
+      setAuthModalOpen(true);
     } else {
-      scriptElement.addEventListener('load', initButtons);
+      setDashboardOpen(true);
     }
-  }, [clientId]);
-
-  // Render PayPal Buttons when SDK loaded
-  useEffect(() => {
-    if (sdkLoaded && window.paypal && buttonContainerRef.current && paymentStep === 'review') {
-      buttonContainerRef.current.innerHTML = '';
-
-      try {
-        window.paypal
-          .Buttons({
-            style: {
-              layout: 'vertical',
-              color: 'gold',
-              shape: 'rect',
-              label: 'paypal',
-            },
-            createOrder: (_data: any, actions: any) => {
-              return actions.order.create({
-                purchase_units: [
-                  {
-                    amount: {
-                      value: finalTotal.toFixed(2),
-                      currency_code: 'EUR',
-                    },
-                    description: `Graviq Shop Bestellung (${cart.length} Artikel)`,
-                  },
-                ],
-              });
-            },
-            onApprove: async (_data: any, actions: any) => {
-              setPaymentStep('processing');
-              try {
-                const details = await actions.order.capture();
-                const txId = details?.id || `PAYPAL-TX-${Date.now()}`;
-
-                const order = placeOrder(
-                  isLive ? 'paypal_live' : 'paypal_sandbox',
-                  targetLink || 'https://twitch.tv/',
-                  txId
-                );
-
-                setCreatedOrder(order);
-                setPaymentStep('success');
-
-                try {
-                  confetti({
-                    particleCount: 140,
-                    spread: 85,
-                    origin: { y: 0.55 },
-                  });
-                } catch (e) {
-                  // ignore
-                }
-
-                onSuccess(order);
-              } catch (err) {
-                console.error('PayPal Order Capture Error:', err);
-                handleExecutePayment();
-              }
-            },
-            onError: (err: any) => {
-              console.error('PayPal Buttons Error:', err);
-            },
-          })
-          .render(buttonContainerRef.current);
-      } catch (e) {
-        console.warn('Could not render PayPal buttons:', e);
-      }
-    }
-  }, [sdkLoaded, paymentStep, finalTotal, isLive, targetLink]);
-
-  const handleExecutePayment = () => {
-    setPaymentStep('processing');
-
-    setTimeout(() => {
-      const txId = `PAYPAL-TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const order = placeOrder(
-        isLive ? 'paypal_live' : 'paypal_sandbox',
-        targetLink || 'https://twitch.tv/',
-        txId
-      );
-      setCreatedOrder(order);
-      setPaymentStep('success');
-
-      // Trigger Celebration Confetti
-      try {
-        confetti({
-          particleCount: 120,
-          spread: 80,
-          origin: { y: 0.6 },
-        });
-      } catch (e) {
-        // fallback ignore
-      }
-
-      onSuccess(order);
-    }, 1500);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden">
-        {/* Decorative Top Gradient Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400" />
-
-        {paymentStep === 'review' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <div className="bg-blue-600/20 text-blue-400 p-2 rounded-xl">
-                  <CreditCard className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-white">PayPal Express Checkout</h3>
-                  <p className="text-xs text-slate-400">
-                    Sichere 256-Bit SSL Verschlüsselte Zahlung
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={onClose}
-                className="text-slate-400 hover:text-white bg-slate-800 p-2 rounded-xl cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Admin / Maintenance Info Box (hidden for normal customers) */}
-            {(isMaintenance || isAdmin) && (
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 text-xs space-y-2">
-                <div className="flex items-center justify-between text-slate-300 font-semibold">
-                  <span>Zahlungs-Modus:</span>
-                  <span className={`px-2 py-0.5 rounded font-mono font-bold uppercase text-[10px] ${
-                    isLive ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800'
-                  }`}>
-                    {isLive ? '🟢 LIVE (Echte Zahlungen)' : isMaintenance ? '🛠️ WARTUNGSMODUS (Testmodus)' : '🟡 ADMIN SANDBOX (Testmodus)'}
-                  </span>
-                </div>
-                {isMaintenance && (
-                  <div className="text-[11px] text-amber-300/90 font-medium bg-amber-950/40 p-2 rounded-lg border border-amber-800/40">
-                    🛠️ <strong>Wartungsarbeiten aktiv:</strong> Zahlungen werden als Testmodus/Simulation ausgeführt.
-                  </div>
-                )}
-                {isAdmin && !isMaintenance && isTestMode && (
-                  <div className="text-[11px] text-purple-300/90 font-medium bg-purple-950/40 p-2 rounded-lg border border-purple-800/40">
-                    👑 <strong>Admin-Testmodus:</strong> Du testest den Shop gerade im Sandbox-Modus.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Items Summary */}
-            <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 mb-6 space-y-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                Bestellübersicht:
-              </span>
-              {cart.map((item, i) => (
-                <div key={i} className="flex justify-between items-center text-xs text-slate-300">
-                  <span className="truncate max-w-[240px]">{item.title}</span>
-                  <span className="font-mono text-white font-bold">€{(item.price * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
-
-              <div className="border-t border-slate-800 pt-3 mt-3 flex justify-between items-baseline">
-                <span className="text-sm font-bold text-white">Gesamtsumme (Inkl. MwSt.):</span>
-                <span className="text-2xl font-black text-cyan-400 font-mono">
-                  €{finalTotal.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            {/* Target Channel Input */}
-            <div className="mb-4">
-              <label className="block text-slate-300 text-xs font-semibold mb-2">
-                Ziel-Link / Stream-URL bestätigen:
-              </label>
-              <input
-                type="text"
-                value={targetLink}
-                onChange={(e) => setTargetLink(e.target.value)}
-                placeholder="z.B. https://twitch.tv/dein_kanal"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-xs focus:outline-none focus:border-cyan-400"
-              />
-            </div>
-
-            {/* PayPal Käuferschutz Disclaimer Notice */}
-            <div className="mb-6 bg-slate-950/80 p-3.5 rounded-xl border border-amber-900/40 text-[11px] text-amber-300/90 leading-relaxed">
-              <span className="font-bold text-amber-200 block mb-1">⚠️ Hinweis zum PayPal Käuferschutz:</span>
-              Da es sich bei unseren Dienstleistungen um digitale Echtzeit-Dienstleistungen (Social-Media Promotions / Stream-Support) handelt, ist der PayPal-Käuferschutz gemäß den PayPal-Nutzungsbedingungen für digitale Güter ausgeschlossen. Mit der Bestellung stimmst du dem sofortigen Beginn der Ausführung zu.
-            </div>
-
-            {/* PayPal Smart Buttons Container */}
-            <div className="mb-4">
-              <div id="paypal-button-container" ref={buttonContainerRef} className="min-h-[48px]" />
-            </div>
-
-            {/* Alternative Direct Confirm Button (Only visible for Admin or during Maintenance mode) */}
-            {(isAdmin || isMaintenance) && (
-              <button
-                onClick={handleExecutePayment}
-                className="w-full mt-3 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Lock className="w-4 h-4 text-cyan-400" />
-                <span>Direkt im Shop Bestätigen (Admin / Wartung Test - €{finalTotal.toFixed(2)})</span>
-              </button>
-            )}
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative selection:bg-purple-600 selection:text-white flex flex-col justify-between select-none">
+      {/* DevTools / Inspect Mode Security Popup Alert */}
+      {showSecurityAlert && (
+        <div className="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-red-950/95 border border-red-700 text-red-200 px-5 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-bounce">
+          <ShieldAlert className="w-5 h-5 text-red-400 shrink-0" />
+          <div className="text-xs">
+            <span className="font-extrabold text-white block">🔒 Untersucher-Modus deaktiviert!</span>
+            <span className="text-red-300">Entwicklerwerkzeuge & Rechtsklick sind aus Sicherheitsgründen auf Graviq-Shop gesperrt.</span>
           </div>
-        )}
+        </div>
+      )}
 
-        {paymentStep === 'processing' && (
-          <div className="py-12 text-center">
-            <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-            <h3 className="text-xl font-black text-white mb-2">Zahlung wird verarbeitet...</h3>
-            <p className="text-slate-400 text-xs">
-              Verbindung mit PayPal Gateway Hergestellt. Bitte schließe dieses Fenster nicht.
+      {/* Anti-Spam / Account & IP Blocked Overlay */}
+      <BlockedOverlay />
+
+      {/* Maintenance Mode Overlay (Blocks standard customers if maintenance mode is enabled) */}
+      <MaintenanceOverlay />
+
+      {/* Staff Maintenance Active Alert Banner */}
+      {shopSettings.isMaintenanceMode && isStaff && (
+        <div className="bg-amber-950 border-b border-amber-800/80 text-amber-200 px-4 py-2 text-xs font-extrabold flex items-center justify-between z-40 relative">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span>⚠️ WARTUNGSMODUS AKTIV: Der Shop ist für normale Kunden gesperrt. Du bist als {currentUser.role.toUpperCase()} eingeloggt.</span>
+          </div>
+          <button
+            onClick={() => setAdminOpen(true)}
+            className="bg-amber-900 hover:bg-amber-800 text-amber-100 px-3 py-1 rounded-xl border border-amber-700 font-bold transition-all cursor-pointer"
+          >
+            Wartung verwalten
+          </button>
+        </div>
+      )}
+
+      {/* Dynamic Seasonal Background Particles */}
+      <SeasonalParticles season={shopSettings.activeSeason} />
+
+      <div>
+        {/* Navigation Bar */}
+        <Navbar
+          onOpenLiveSlider={() => setLiveSliderModalOpen(true)}
+          onOpenDashboard={() => setDashboardOpen(true)}
+          onOpenAdmin={() => setAdminOpen(true)}
+          onOpenSupportModal={handleOpenSupport}
+          onOpenFaq={() => setFaqModalOpen(true)}
+        />
+
+        {/* Hero Banner Section */}
+        <HeroSection onOpenLiveSlider={() => setLiveSliderModalOpen(true)} />
+
+        {/* Featured Live Viewer Slider Embedded Showcase */}
+        <section className="py-12 px-4 max-w-7xl mx-auto relative z-10">
+          <div className="text-center mb-8">
+            <span className="bg-cyan-950 text-cyan-400 border border-cyan-800 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full inline-block mb-3">
+              🔥 Interaktiver Schieberegler
+            </span>
+            <h2 className="text-3xl font-black text-white">
+              Wähle Deine Exakte Live-Zuschauer Anzahl
+            </h2>
+            <p className="text-slate-400 text-xs sm:text-sm mt-1">
+              Passe Zuschauer & Stream-Dauer in Echtzeit an. Instant Preisberechnung!
             </p>
           </div>
-        )}
 
-        {paymentStep === 'success' && createdOrder && (
-          <div className="py-4 text-center">
-            <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
-              <CheckCircle className="w-10 h-10" />
-            </div>
+          <LiveViewerSlider embedded={true} />
+        </section>
 
-            <h3 className="text-2xl font-black text-white mb-1">Zahlung Erfolgreich! 🎉</h3>
-            <p className="text-slate-400 text-xs mb-6">
-              Vielen Dank für deine Bestellung bei <strong className="text-cyan-400">Graviq Shop</strong>!
-            </p>
+        {/* Standard Packages Product Grid */}
+        <ProductGrid />
 
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left text-xs mb-6 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Bestell-ID:</span>
-                <span className="font-mono text-cyan-400 font-bold">{createdOrder.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">PayPal Transaktions-ID:</span>
-                <span className="font-mono text-slate-300">{createdOrder.paypalTransactionId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Betrag:</span>
-                <span className="font-mono text-emerald-400 font-bold">€{createdOrder.totalPrice.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Status:</span>
-                <span className="font-bold text-amber-400">In Bearbeitung / Gestartet</span>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-slate-400 mb-6 flex items-center justify-center gap-1">
-              <Mail className="w-3.5 h-3.5 text-cyan-400" />
-              Bestätigungs-E-Mail wurde an <strong className="text-slate-200">{createdOrder.userEmail}</strong> gesendet.
-            </p>
-
-            <div className="space-y-3">
-              <button
-                onClick={() => setShowInvoiceModal(true)}
-                className="w-full py-3.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-extrabold text-sm rounded-2xl shadow-lg cursor-pointer flex items-center justify-center gap-2"
-              >
-                <FileText className="w-4 h-4 text-cyan-200" />
-                <span>🧾 Offizielle Rechnung (PDF) anzeigen & drucken</span>
-              </button>
-
-              <button
-                onClick={onClose}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-2xl cursor-pointer"
-              >
-                Fenster Schließen & Weiter Stöbern
-              </button>
-            </div>
-          </div>
-        )}
-
-        {showInvoiceModal && createdOrder && (
-          <InvoiceModal order={createdOrder} onClose={() => setShowInvoiceModal(false)} />
-        )}
+        {/* S3 eSport Official Partnership & Application Section */}
+        <PartnerSection />
       </div>
+
+      {/* Footer */}
+      <Footer
+        onOpenSupportModal={handleOpenSupport}
+        onOpenLiveSlider={() => setLiveSliderModalOpen(true)}
+        onOpenFaq={() => setFaqModalOpen(true)}
+      />
+
+      {/* Floating Interactive Live-Support Text Chat Widget */}
+      <LiveSupportWidget />
+
+      {/* Live Viewer Slider Modal */}
+      {liveSliderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="w-full max-w-3xl my-8">
+            <LiveViewerSlider onClose={() => setLiveSliderModalOpen(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* FAQ & Support Help Modal */}
+      {faqModalOpen && (
+        <FaqModal
+          onClose={() => setFaqModalOpen(false)}
+          onOpenDashboardSupport={handleOpenSupport}
+        />
+      )}
+
+      {/* S3 eSport & Graviq Partner Application Modal */}
+      <PartnerModal />
+
+      {/* Cart Side-Drawer */}
+      <CartDrawer onOpenPayPal={() => setPayPalModalOpen(true)} />
+
+      {/* Real PayPal Checkout Modal */}
+      {payPalModalOpen && (
+        <PayPalModal
+          onClose={() => setPayPalModalOpen(false)}
+          onSuccess={handleOrderSuccess}
+        />
+      )}
+
+      {/* Login / Register / Password Reset Modal */}
+      <AuthModal />
+
+      {/* Support Account Reset Code Modal */}
+      {resetModalOpen && <AccountResetModal onClose={() => setResetModalOpen(false)} />}
+
+      {/* Customer Dashboard */}
+      {dashboardOpen && <UserDashboard onClose={() => setDashboardOpen(false)} />}
+
+      {/* Admin / Support Management Dashboard */}
+      {adminOpen && <AdminDashboard onClose={() => setAdminOpen(false)} />}
     </div>
   );
-};
+}
+
+export default function App() {
+  return (
+    <ShopProvider>
+      <MainShopView />
+    </ShopProvider>
+  );
+}
