@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
-import { ShieldCheck, CheckCircle, CreditCard, Lock, Sparkles, Copy, Mail, FileText } from 'lucide-react';
+import { CheckCircle, CreditCard, Lock, FileText, Mail } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Order } from '../types';
 import { InvoiceModal } from './InvoiceModal';
@@ -15,50 +15,106 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
 
   const [paymentStep, setPaymentStep] = useState<'review' | 'processing' | 'success'>('review');
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
-  const [emailInput, setEmailInput] = useState<string>('');
   const [targetLink, setTargetLink] = useState<string>(cart[0]?.targetLink || '');
   const [showInvoiceModal, setShowInvoiceModal] = useState<boolean>(false);
+  const [sdkLoaded, setSdkLoaded] = useState<boolean>(false);
+  const [sdkError, setSdkError] = useState<string | null>(null);
 
   const rawTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const couponDisc = appliedCoupon ? (rawTotal * appliedCoupon.discountPercent) / 100 : 0;
   const seasonDisc = (rawTotal * (shopSettings.seasonDiscountPercent || 0)) / 100;
   const finalTotal = Math.max(0, rawTotal - (couponDisc + seasonDisc));
 
-  const isLive = shopSettings.paypalMode === 'live';
+  const isMaintenance = !!shopSettings.isMaintenanceMode;
+  const isLive = shopSettings.paypalMode === 'live' && !isMaintenance;
 
-  const handleExecutePayment = () => {
-    setPaymentStep('processing');
+  // Lade das offizielle PayPal SDK dynamisch beim Öffnen des Modals
+  useEffect(() => {
+    if (!shopSettings.paypalClientId) {
+      setSdkError('Keine PayPal Client-ID in den Shop-Einstellungen gefunden.');
+      return;
+    }
 
-    setTimeout(() => {
-      // Simulate real PayPal transaction authorization with real credentials setup
-      const txId = `PAYPAL-TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const order = placeOrder(
-        isLive ? 'paypal_live' : 'paypal_sandbox',
-        targetLink || 'https://twitch.tv/',
-        txId
-      );
-      setCreatedOrder(order);
-      setPaymentStep('success');
+    // Prüfen, ob das SDK bereits geladen ist
+    if (window.paypal) {
+      setSdkLoaded(true);
+      return;
+    }
 
-      // Trigger Celebration Confetti
-      try {
-        confetti({
-          particleCount: 120,
-          spread: 80,
-          origin: { y: 0.6 },
-        });
-      } catch (e) {
-        // fallback ignore
-      }
+    const script = document.createElement('script');
+    script.src = `https://www.paypal.com/sdk/js?client-id=${shopSettings.paypalClientId}&currency=EUR`;
+    script.async = true;
+    script.onload = () => setSdkLoaded(true);
+    script.onerror = () => setSdkError('Fehler beim Laden des PayPal SDKs. Bitte Internetverbindung prüfen.');
+    document.body.appendChild(script);
+  }, [shopSettings.paypalClientId]);
 
-      onSuccess(order);
-    }, 1500);
-  };
+  // Rendere die PayPal Buttons sobald das SDK da ist
+  useEffect(() => {
+    if (sdkLoaded && paymentStep === 'review' && window.paypal) {
+      // Vorherigen Container leeren falls vorhanden
+      const container = document.getElementById('paypal-button-container');
+      if (container) container.innerHTML = '';
+
+      window.paypal.Buttons({
+        createOrder: (data: any, actions: any) => {
+          if (!targetLink) {
+            alert('Bitte gib zuerst deinen Ziel-Link / Stream-URL ein!');
+            throw new Error('Ziel-Link fehlt');
+          }
+          return actions.order.create({
+            purchase_units: [{
+              amount: {
+                value: finalTotal.toFixed(2)
+              },
+              description: 'Graviq Shop - Social Media Service'
+            }]
+          });
+        },
+        onApprove: async (data: any, actions: any) => {
+          setPaymentStep('processing');
+          try {
+            const details = await actions.order.capture();
+            const txId = details.id || `PAYPAL-TX-${Date.now()}`;
+            
+            const order = placeOrder(
+              isLive ? 'paypal_live' : 'paypal_sandbox',
+              targetLink || 'https://twitch.tv/',
+              txId
+            );
+            
+            setCreatedOrder(order);
+            setPaymentStep('success');
+
+            try {
+              confetti({
+                particleCount: 120,
+                spread: 80,
+                origin: { y: 0.6 },
+              });
+            } catch (e) {
+              // ignore
+            }
+
+            onSuccess(order);
+          } catch (err) {
+            console.error('PayPal Capture Error:', err);
+            setPaymentStep('review');
+            alert('Fehler bei der Zahlungsabwicklung durch PayPal.');
+          }
+        },
+        onError: (err: any) => {
+          console.error('PayPal Checkout Error:', err);
+          alert('Ein Fehler ist bei der PayPal-Zahlung aufgetreten.');
+          setPaymentStep('review');
+        }
+      }).render('#paypal-button-container');
+    }
+  }, [sdkLoaded, paymentStep, finalTotal, targetLink, isLive, placeOrder, onSuccess]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden">
-        {/* Decorative Top Gradient Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400" />
 
         {paymentStep === 'review' && (
@@ -69,10 +125,8 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
                   <CreditCard className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-white">PayPal Express Checkout</h3>
-                  <p className="text-xs text-slate-400">
-                    Sichere 256-Bit SSL Verschlüsselte Zahlung
-                  </p>
+                  <h3 className="text-xl font-black text-white">Echter PayPal Checkout</h3>
+                  <p className="text-xs text-slate-400">Sichere SSL-Verschlüsselte Zahlung</p>
                 </div>
               </div>
 
@@ -84,7 +138,6 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
               </button>
             </div>
 
-            {/* PayPal Active Credentials Info */}
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6 text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-300 font-semibold">
                 <span>Zahlungs-Modus:</span>
@@ -94,12 +147,8 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
                   {isLive ? '🟢 LIVE (Echte PayPal Zahlung)' : '🟡 SANDBOX (Testmodus)'}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 truncate">
-                Shop Client-ID: <span className="font-mono text-slate-300">{shopSettings.paypalClientId.substring(0, 16)}...</span>
-              </div>
             </div>
 
-            {/* Items Summary */}
             <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 mb-6 space-y-2">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
                 Bestellübersicht:
@@ -119,7 +168,6 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
               </div>
             </div>
 
-            {/* Target Channel Input */}
             <div className="mb-4">
               <label className="block text-slate-300 text-xs font-semibold mb-2">
                 Ziel-Link / Stream-URL bestätigen:
@@ -129,24 +177,27 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
                 value={targetLink}
                 onChange={(e) => setTargetLink(e.target.value)}
                 placeholder="z.B. https://twitch.tv/dein_kanal"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-xs focus:outline-none focus:border-cyan-400"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-xs focus:outline-none focus:border-cyan-400"
               />
             </div>
 
-            {/* PayPal Käuferschutz Disclaimer Notice */}
-            <div className="mb-6 bg-slate-950/80 p-3.5 rounded-xl border border-amber-900/40 text-[11px] text-amber-300/90 leading-relaxed">
-              <span className="font-bold text-amber-200 block mb-1">⚠️ Hinweis zum PayPal Käuferschutz:</span>
-              Da es sich bei unseren Dienstleistungen um digitale Echtzeit-Dienstleistungen (Social-Media Promotions / Stream-Support) handelt, ist der PayPal-Käuferschutz gemäß den PayPal-Nutzungsbedingungen für digitale Güter ausgeschlossen. Mit der Bestellung stimmst du dem sofortigen Beginn der Ausführung zu.
-            </div>
+            {sdkError && (
+              <div className="mb-4 p-3 bg-red-950/50 border border-red-800 text-red-400 text-xs rounded-xl">
+                {sdkError}
+              </div>
+            )}
 
-            {/* Execute Payment Button */}
-            <button
-              onClick={handleExecutePayment}
-              className="w-full py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-base rounded-2xl shadow-xl shadow-blue-900/40 transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Lock className="w-4 h-4 text-cyan-200" />
-              <span>Zahlung Jetzt Bestätigen (€{finalTotal.toFixed(2)})</span>
-            </button>
+            {/* Hier platziert PayPal automatisch den echten Button */}
+            <div className="mt-6">
+              {!sdkLoaded ? (
+                <div className="py-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  Lade sicheres PayPal Checkout...
+                </div>
+              ) : (
+                <div id="paypal-button-container" className="w-full"></div>
+              )}
+            </div>
           </div>
         )}
 
@@ -190,18 +241,13 @@ export const PayPalModal: React.FC<PayPalModalProps> = ({ onClose, onSuccess }) 
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-400 mb-6 flex items-center justify-center gap-1">
-              <Mail className="w-3.5 h-3.5 text-cyan-400" />
-              Bestätigungs-E-Mail wurde an <strong className="text-slate-200">{createdOrder.userEmail}</strong> gesendet.
-            </p>
-
             <div className="space-y-3">
               <button
                 onClick={() => setShowInvoiceModal(true)}
                 className="w-full py-3.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-extrabold text-sm rounded-2xl shadow-lg cursor-pointer flex items-center justify-center gap-2"
               >
                 <FileText className="w-4 h-4 text-cyan-200" />
-                <span>🧾 Offizielle Rechnung (PDF) anzeigen & drucken</span>
+                <span>Offizielle Rechnung (PDF) anzeigen & drucken</span>
               </button>
 
               <button
