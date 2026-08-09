@@ -107,6 +107,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     products,
     updateProduct,
     deleteProduct,
+    quickMacros,
+    supporterShifts,
+    updateSupporterStatus,
   } = useShop();
 
   const isAdmin = currentUser?.role === 'admin';
@@ -1635,7 +1638,83 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
 
             {/* TICKETS DESK TAB */}
             {activeTab === 'tickets' && (
-              <div>
+              <div className="space-y-4">
+                {/* Supporter Shift & Presence Control Bar */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-900/40 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center justify-center font-bold text-sm shrink-0">
+                        💼
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white flex items-center gap-2">
+                          Supporter Live-Schicht & Präsenz-Status
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          Aktualisiere deinen Arbeitsstatus für das Team & Kunden.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Toggle Buttons */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => updateSupporterStatus('online')}
+                        className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/80 px-2.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        🟢 Online
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSupporterStatus('in_schicht')}
+                        className="bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/80 px-2.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        💼 In Schicht
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSupporterStatus('pause')}
+                        className="bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800/80 px-2.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        ☕ Pause
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSupporterStatus('offline')}
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 px-2.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        🔴 Offline
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Active Supporters Overview Pills */}
+                  {supporterShifts.length > 0 && (
+                    <div className="pt-2 border-t border-slate-900 flex items-center gap-2 overflow-x-auto text-[11px]">
+                      <span className="text-slate-500 font-bold shrink-0">Team Präsenz:</span>
+                      {supporterShifts.map((s, idx) => (
+                        <span
+                          key={idx}
+                          className={`px-2.5 py-1 rounded-xl border font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                            s.status === 'in_schicht'
+                              ? 'bg-cyan-950 text-cyan-300 border-cyan-800'
+                              : s.status === 'online'
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              : s.status === 'pause'
+                              ? 'bg-amber-950 text-amber-300 border-amber-800'
+                              : 'bg-slate-900 text-slate-500 border-slate-800'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-current" />
+                          <span>{s.userName}</span>
+                          <span className="text-[9px] uppercase font-mono opacity-80">({s.status})</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {!selectedAdminTicket ? (
                   <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
@@ -1691,6 +1770,12 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                                 Kunde: <strong className="text-slate-200">{tck.userName}</strong> ({tck.userEmail}) • Priorität:{' '}
                                 <strong className="text-amber-400 uppercase text-[10px]">{tck.priority}</strong>
                               </p>
+                              {tck.rating && (
+                                <p className="text-[11px] text-amber-400 font-bold flex items-center gap-1">
+                                  <span>⭐ Kundenbewertung: {tck.rating}/5.0</span>
+                                  {tck.ratingComment && <span className="text-slate-400 italic">("{tck.ratingComment}")</span>}
+                                </p>
+                              )}
                             </div>
 
                             <div className="text-right flex items-center gap-3">
@@ -1755,6 +1840,11 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                         <p className="text-xs text-slate-400">
                           Kunde: {selectedAdminTicket.userName} ({selectedAdminTicket.userEmail})
                         </p>
+                        {selectedAdminTicket.rating && (
+                          <div className="mt-1 text-xs text-amber-400 font-bold">
+                            ⭐ Kundenbewertung: {selectedAdminTicket.rating} / 5 Sterne {selectedAdminTicket.ratingComment ? `("${selectedAdminTicket.ratingComment}")` : ''}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1784,6 +1874,26 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                           </div>
                         );
                       })}
+                    </div>
+
+                    {/* Quick Macro Schnellantworten */}
+                    <div className="mb-2 space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        ⚡ Quick-Macro Schnellantworten (1-Klick):
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {quickMacros.map((macro) => (
+                          <button
+                            key={macro.id}
+                            type="button"
+                            onClick={() => setAdminReplyMsg(macro.content)}
+                            className="bg-slate-900 hover:bg-indigo-950 text-indigo-300 hover:text-white border border-indigo-900/60 hover:border-indigo-500 px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
+                            title={macro.content}
+                          >
+                            <span>{macro.title}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <form onSubmit={handleAdminReplySubmit} className="flex gap-2">

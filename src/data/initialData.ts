@@ -261,3 +261,88 @@ export const INITIAL_ORDERS: Order[] = [];
 
 export const INITIAL_TICKETS: Ticket[] = [];
 
+export const INITIAL_IN_APP_NOTIFICATIONS = [
+  {
+    id: 'notif_welcome_v3',
+    title: '🚀 v3.2.0 Update Live!',
+    message: 'Neu: Graviq Coins Treuepunkte, Daily Login Bonus, VIP-Ränge & Support-Schicht-System sind jetzt aktiv!',
+    type: 'update' as const,
+    read: false,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'notif_coins_info',
+    title: '🪙 100 Graviq Coins geschenkt!',
+    message: 'Hole dir jetzt deinen täglichen Daily Login Bonus ab & löse Coins gegen echtes Guthaben ein.',
+    type: 'coins' as const,
+    read: false,
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const INITIAL_PRODUCT_REVIEWS = [
+  {
+    id: 'rev_1',
+    productId: 'tw_fol_1',
+    userId: 'usr_sample_1',
+    userName: 'GamerPro_DE',
+    rating: 5,
+    comment: 'Mega schnelle Lieferung! Innerhalb von 3 Minuten waren alle Twitch Follower da. Absolut empfehlenswert ⭐⭐⭐⭐⭐',
+    createdAt: '2026-08-08T14:30:00Z',
+    verifiedBuyer: true,
+  },
+  {
+    id: 'rev_2',
+    productId: 'tt_fol_1',
+    userId: 'usr_sample_2',
+    userName: 'TikTok_Kreativ',
+    rating: 5,
+    comment: 'Top Qualität! Hat mir direkt geholfen den Live-Stream Button freizuschalten. Danke an das Graviq Support Team ❤️',
+    createdAt: '2026-08-07T11:15:00Z',
+    verifiedBuyer: true,
+  },
+];
+
+export const INITIAL_SUPPORTER_SHIFTS = [
+  {
+    userId: 'usr_admin_strauss',
+    userName: 'Strauss (straussiimausii)',
+    userEmail: 'strauss@graviq.shop',
+    role: 'admin' as const,
+    status: 'online' as const,
+    shiftStartedAt: new Date().toISOString(),
+    ticketsResolvedToday: 12,
+  },
+];
+
+export const INITIAL_QUICK_MACROS = [
+  {
+    id: 'macro_1',
+    title: '👋 Freundliche Begrüßung',
+    shortcut: '!hello',
+    content: 'Hallo! Schön dass du dich beim Graviq Support meldest. Ich schaue mir dein Anliegen sofort an! 😊',
+    category: 'Begrüßung',
+  },
+  {
+    id: 'macro_2',
+    title: '📦 Lieferzeit Status',
+    shortcut: '!delivery',
+    content: 'Deine Bestellung wird bereits über unsere High-Speed Server verarbeitet. Die Auslieferung erfolgt in der Regel innerhalb von 5-15 Minuten! 🚀',
+    category: 'Bestellung',
+  },
+  {
+    id: 'macro_3',
+    title: '🔑 Account-Reset Info',
+    shortcut: '!reset',
+    content: 'Ein Admin oder Supporter hat deinen Reset-Code generiert. Bitte erstelle dein neues Passwort direkt über den zugesandten Link. 🔒',
+    category: 'Sicherheit',
+  },
+  {
+    id: 'macro_4',
+    title: '✅ Ticket Schließung & Danke',
+    shortcut: '!close',
+    content: 'Freut mich dass ich dir helfen konnte! Ich schließe dieses Ticket nun. Bitte hinterlasse uns kurz eine Sterne-Bewertung. Viel Erfolg weiterhin! ⭐',
+    category: 'Abschluss',
+  },
+];
+

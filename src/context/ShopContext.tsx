@@ -15,6 +15,10 @@ import {
   ResetCode,
   PendingSyncEvent,
   DeletedUserMeta,
+  ProductReview,
+  SupporterShift,
+  InAppNotification,
+  QuickMacro,
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -25,6 +29,10 @@ import {
   INITIAL_ORDERS,
   INITIAL_TICKETS,
   INITIAL_PARTNER_APPLICATIONS,
+  INITIAL_IN_APP_NOTIFICATIONS,
+  INITIAL_PRODUCT_REVIEWS,
+  INITIAL_SUPPORTER_SHIFTS,
+  INITIAL_QUICK_MACROS,
 } from '../data/initialData';
 import {
   syncUserToDatabase,
@@ -159,6 +167,31 @@ interface ShopContextType {
   partnerModalOpen: boolean;
   setPartnerModalOpen: (open: boolean) => void;
 
+  // In-App Notifications & Bells
+  inAppNotifications: InAppNotification[];
+  addInAppNotification: (notif: Omit<InAppNotification, 'id' | 'createdAt' | 'read'>) => void;
+  markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+  clearInAppNotifications: () => void;
+
+  // Product Reviews & Ratings
+  productReviews: ProductReview[];
+  addProductReview: (productId: string, rating: number, comment: string) => void;
+
+  // Supporter Shifts & Quick Macros
+  supporterShifts: SupporterShift[];
+  updateSupporterStatus: (status: SupporterShift['status']) => void;
+  quickMacros: QuickMacro[];
+
+  // Loyalty & Gamification (Daily Reward, Coins Conversion, Ticket Ratings)
+  claimDailyReward: () => { success: boolean; message: string; rewardCoins?: number; rewardBalance?: number };
+  convertCoinsToBalance: (coinsToConvert: number) => { success: boolean; message: string };
+  rateTicket: (ticketId: string, rating: number, comment?: string) => void;
+
+  // Update Announcement Modal
+  updateModalOpen: boolean;
+  setUpdateModalOpen: (open: boolean) => void;
+
   // Auto Google Sheets Live Trigger & Event Staging
   triggerGoogleSheetsFullSync: () => Promise<void>;
   pendingSyncEvents: PendingSyncEvent[];
@@ -254,6 +287,58 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+
+  // In-App Notifications State
+  const [inAppNotifications, setInAppNotifications] = useState<InAppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem('graviq_in_app_notifications');
+      return saved ? JSON.parse(saved) : INITIAL_IN_APP_NOTIFICATIONS;
+    } catch {
+      return INITIAL_IN_APP_NOTIFICATIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('graviq_in_app_notifications', JSON.stringify(inAppNotifications));
+    } catch (_) {}
+  }, [inAppNotifications]);
+
+  // Product Reviews State
+  const [productReviews, setProductReviews] = useState<ProductReview[]>(() => {
+    try {
+      const saved = localStorage.getItem('graviq_product_reviews');
+      return saved ? JSON.parse(saved) : INITIAL_PRODUCT_REVIEWS;
+    } catch {
+      return INITIAL_PRODUCT_REVIEWS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('graviq_product_reviews', JSON.stringify(productReviews));
+    } catch (_) {}
+  }, [productReviews]);
+
+  // Supporter Shifts State
+  const [supporterShifts, setSupporterShifts] = useState<SupporterShift[]>(() => {
+    try {
+      const saved = localStorage.getItem('graviq_supporter_shifts');
+      return saved ? JSON.parse(saved) : INITIAL_SUPPORTER_SHIFTS;
+    } catch {
+      return INITIAL_SUPPORTER_SHIFTS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('graviq_supporter_shifts', JSON.stringify(supporterShifts));
+    } catch (_) {}
+  }, [supporterShifts]);
+
+  // Quick Macros (Canned Replies)
+  const [quickMacros] = useState<QuickMacro[]>(INITIAL_QUICK_MACROS);
 
   const [pendingSyncEvents, setPendingSyncEvents] = useState<PendingSyncEvent[]>(() => {
     try {
@@ -317,6 +402,204 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setPendingSyncEvents((prev) => prev.filter((e) => !syncedIds.includes(e.id)));
     }
     return success;
+  };
+
+  // In-App Notification Methods
+  const addInAppNotification = (notif: Omit<InAppNotification, 'id' | 'createdAt' | 'read'>) => {
+    const newNotif: InAppNotification = {
+      ...notif,
+      id: `notif_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    setInAppNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  const markNotificationAsRead = (id: string) => {
+    setInAppNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const markAllNotificationsAsRead = () => {
+    setInAppNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const clearInAppNotifications = () => {
+    setInAppNotifications([]);
+  };
+
+  // Product Review Methods
+  const addProductReview = (productId: string, rating: number, comment: string) => {
+    if (!currentUser) return;
+    const newReview: ProductReview = {
+      id: `rev_${Date.now()}`,
+      productId,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      rating,
+      comment,
+      createdAt: new Date().toISOString(),
+      verifiedBuyer: orders.some((o) => o.userId === currentUser.id || o.userEmail === currentUser.email),
+    };
+    setProductReviews((prev) => [newReview, ...prev]);
+
+    // Reward user with 15 Graviq Coins
+    const currentCoins = currentUser.coins || 0;
+    const updatedCoins = currentCoins + 15;
+    const updatedUser = { ...currentUser, coins: updatedCoins };
+    setCurrentUser(updatedUser);
+    syncUserToDatabase(updatedUser);
+
+    addInAppNotification({
+      userId: currentUser.id,
+      title: '⭐ Bewertung Veröffentlicht!',
+      message: 'Vielen Dank für deine Produkt-Bewertung! Du hast +15 Graviq Coins geschenkt bekommen.',
+      type: 'coins',
+    });
+  };
+
+  // Supporter Shift Status Update
+  const updateSupporterStatus = (status: SupporterShift['status']) => {
+    if (!currentUser) return;
+    setSupporterShifts((prev) => {
+      const existing = prev.find((s) => s.userId === currentUser.id || s.userEmail === currentUser.email);
+      if (existing) {
+        return prev.map((s) =>
+          s.userId === currentUser.id || s.userEmail === currentUser.email
+            ? { ...s, status, shiftStartedAt: status === 'in_schicht' ? new Date().toISOString() : s.shiftStartedAt }
+            : s
+        );
+      } else {
+        return [
+          ...prev,
+          {
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userEmail: currentUser.email,
+            role: currentUser.role,
+            status,
+            shiftStartedAt: status === 'in_schicht' ? new Date().toISOString() : undefined,
+            ticketsResolvedToday: 0,
+          },
+        ];
+      }
+    });
+  };
+
+  // Calculate VIP Rank based on Graviq Coins
+  const calculateVipRank = (coins: number) => {
+    if (coins >= 2500) return 'VIP' as const;
+    if (coins >= 1000) return 'Platin' as const;
+    if (coins >= 500) return 'Gold' as const;
+    if (coins >= 250) return 'Silber' as const;
+    return 'Bronze' as const;
+  };
+
+  // Claim Daily Login Bonus
+  const claimDailyReward = (): { success: boolean; message: string; rewardCoins?: number; rewardBalance?: number } => {
+    if (!currentUser) {
+      return { success: false, message: '❌ Bitte melde dich an, um deinen Belohnungs-Bonus abzuholen.' };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (currentUser.lastDailyRewardClaimed === todayStr) {
+      return { success: false, message: '⏳ Du hast deinen täglichen Bonus heute bereits abgeholt! Komm morgen wieder.' };
+    }
+
+    const rewardCoins = 25;
+    const rewardBalance = 0.50;
+
+    const newCoins = (currentUser.coins || 0) + rewardCoins;
+    const newBalance = Number(((currentUser.balance || 0) + rewardBalance).toFixed(2));
+    const newRank = calculateVipRank(newCoins);
+
+    const updatedUser: User = {
+      ...currentUser,
+      coins: newCoins,
+      balance: newBalance,
+      vipRank: newRank,
+      lastDailyRewardClaimed: todayStr,
+    };
+
+    setCurrentUser(updatedUser);
+    syncUserToDatabase(updatedUser);
+
+    addInAppNotification({
+      userId: currentUser.id,
+      title: '🎁 Daily Login Bonus Abgeholt!',
+      message: `Du hast +25 Graviq Coins & 0,50 € Guthaben erhalten! Aktueller VIP-Rang: ${newRank}`,
+      type: 'reward',
+    });
+
+    return {
+      success: true,
+      message: `🎉 Daily Bonus erhalten! +25 Graviq Coins & +0,50 € Guthaben gutgeschrieben. (Dein Rang: ${newRank})`,
+      rewardCoins,
+      rewardBalance,
+    };
+  };
+
+  // Convert Graviq Coins into Balance (100 Coins = 1,00 €)
+  const convertCoinsToBalance = (coinsToConvert: number): { success: boolean; message: string } => {
+    if (!currentUser) {
+      return { success: false, message: '❌ Bitte zuerst einloggen.' };
+    }
+    const currentCoins = currentUser.coins || 0;
+    if (coinsToConvert < 100) {
+      return { success: false, message: '❌ Es müssen mindestens 100 Graviq Coins eingelöst werden (100 Coins = 1,00 €).' };
+    }
+    if (currentCoins < coinsToConvert) {
+      return { success: false, message: `❌ Nicht genügend Coins. Du besitzt aktuell ${currentCoins} Graviq Coins.` };
+    }
+
+    const eurosToAdd = coinsToConvert / 100;
+    const newCoins = currentCoins - coinsToConvert;
+    const newBalance = Number(((currentUser.balance || 0) + eurosToAdd).toFixed(2));
+
+    const updatedUser: User = {
+      ...currentUser,
+      coins: newCoins,
+      balance: newBalance,
+    };
+
+    setCurrentUser(updatedUser);
+    syncUserToDatabase(updatedUser);
+
+    addInAppNotification({
+      userId: currentUser.id,
+      title: '🪙 Coins in Guthaben umgewandelt!',
+      message: `${coinsToConvert} Graviq Coins wurden erfolgreich in ${eurosToAdd.toFixed(2)} € Guthaben umgewandelt!`,
+      type: 'coins',
+    });
+
+    return {
+      success: true,
+      message: `🎉 Erfolg! ${coinsToConvert} Graviq Coins wurden in ${eurosToAdd.toFixed(2)} € Shop-Guthaben gewandelt.`,
+    };
+  };
+
+  // Ticket Rating System
+  const rateTicket = (ticketId: string, rating: number, comment?: string) => {
+    setTickets((prev) =>
+      prev.map((t) => (t.id === ticketId ? { ...t, rating, ratingComment: comment } : t))
+    );
+
+    if (currentUser) {
+      const updatedCoins = (currentUser.coins || 0) + 20;
+      const updatedUser = { ...currentUser, coins: updatedCoins };
+      setCurrentUser(updatedUser);
+      syncUserToDatabase(updatedUser);
+
+      addInAppNotification({
+        userId: currentUser.id,
+        title: '⭐ Support-Bewertung Gespeichert!',
+        message: 'Danke für dein Feedback zu unserem Kundenservice! Du hast +20 Graviq Coins als Dankeschön erhalten.',
+        type: 'ticket',
+      });
+    }
+
+    triggerGoogleSheetsFullSync();
   };
 
   // Sync state to LocalStorage
@@ -1286,6 +1569,29 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
     }
 
+    // Award Graviq Coins (10 Coins per 1€ spent)
+    if (currentUser) {
+      const earnedCoins = Math.max(10, Math.floor(finalTotal * 10));
+      const newCoins = (currentUser.coins || 0) + earnedCoins;
+      const newRank = calculateVipRank(newCoins);
+
+      const updatedUser: User = {
+        ...currentUser,
+        coins: newCoins,
+        vipRank: newRank,
+      };
+
+      setCurrentUser(updatedUser);
+      syncUserToDatabase(updatedUser);
+
+      addInAppNotification({
+        userId: currentUser.id,
+        title: `📦 Bestellung ${newOrder.id} Erfolgreich!`,
+        message: `Vielen Dank für deinen Einkauf! Du hast +${earnedCoins} Graviq Coins erhalten. (VIP-Rang: ${newRank})`,
+        type: 'order',
+      });
+    }
+
     logAuditEvent({
       category: 'shop',
       level: 'success',
@@ -1795,6 +2101,21 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCartOpen,
         partnerModalOpen,
         setPartnerModalOpen,
+        updateModalOpen,
+        setUpdateModalOpen,
+        inAppNotifications,
+        addInAppNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearInAppNotifications,
+        productReviews,
+        addProductReview,
+        supporterShifts,
+        updateSupporterStatus,
+        quickMacros,
+        claimDailyReward,
+        convertCoinsToBalance,
+        rateTicket,
         triggerGoogleSheetsFullSync,
         pendingSyncEvents,
         addSyncEvent,

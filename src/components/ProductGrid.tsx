@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
+import { ProductReviewsSection } from './ProductReviewsSection';
 import { PlatformId, ServiceCategory, ServicePackage, CartItem } from '../types';
 import { Check, ShoppingCart, Zap, Flame, Shield, Star, Filter } from 'lucide-react';
 
@@ -196,7 +197,7 @@ export const ProductGrid: React.FC = () => {
       {/* Target Link Modal */}
       {modalPackage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button
               onClick={() => setModalPackage(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold cursor-pointer"
@@ -241,6 +242,9 @@ export const ProductGrid: React.FC = () => {
                 In den Warenkorb
               </button>
             </div>
+
+            {/* Product Reviews */}
+            <ProductReviewsSection productId={modalPackage.id} />
           </div>
         </div>
       )}

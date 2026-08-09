@@ -1,22 +1,21 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { GraviqLogo } from './GraviqLogo';
+import { InAppNotificationBell } from './InAppNotificationBell';
+import { LoyaltyRewardsModal } from './LoyaltyRewardsModal';
+import { UpdateReleaseNotesModal } from './UpdateReleaseNotesModal';
 import {
   ShoppingCart,
   User as UserIcon,
   LogOut,
   ShieldAlert,
   HelpCircle,
-  Sun,
-  Snowflake,
-  Sparkles,
+  Coins,
   Zap,
-  Sliders,
-  ChevronDown,
   Mail,
   CheckCircle,
 } from 'lucide-react';
-import { PlatformId, SeasonTheme } from '../types';
+import { PlatformId } from '../types';
 
 interface NavbarProps {
   onOpenLiveSlider: () => void;
@@ -44,9 +43,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     setActivePlatform,
     shopSettings,
     notifications,
+    setUpdateModalOpen,
   } = useShop();
 
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false);
 
   const cartTotalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -103,7 +104,31 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+
+          {/* Version Update Pill */}
+          <button
+            onClick={() => setUpdateModalOpen(true)}
+            className="hidden sm:flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold cursor-pointer transition-all hover:scale-105 shadow-sm"
+            title="v3.2.0 Release Notes anzeigen"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>v3.2.0</span>
+          </button>
+
+          {/* Graviq Coins / VIP Club Button */}
+          <button
+            onClick={() => setLoyaltyModalOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 to-purple-600/20 hover:from-amber-500/30 hover:to-purple-600/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-xl text-xs font-black cursor-pointer transition-all shadow-md"
+            title="Graviq Coins, Daily Bonus & VIP Rang"
+          >
+            <Coins className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span className="font-mono text-amber-300">{currentUser?.coins || 0}</span>
+            <span className="hidden lg:inline text-[10px] bg-amber-500 text-black px-1.5 py-0.2 rounded font-black uppercase">{currentUser?.vipRank || 'Bronze'}</span>
+          </button>
+
+          {/* Notification Bell Center */}
+          <InAppNotificationBell />
 
           {/* Email Logs Preview Icon (Admin/Support Only) */}
           {(currentUser?.role === 'admin' || currentUser?.role === 'support') && (
@@ -253,6 +278,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           );
         })}
       </div>
+
+      {/* Modals */}
+      <LoyaltyRewardsModal isOpen={loyaltyModalOpen} onClose={() => setLoyaltyModalOpen(false)} />
+      <UpdateReleaseNotesModal />
     </header>
   );
 };

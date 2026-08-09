@@ -4,6 +4,8 @@ export type PlatformId = 'twitch' | 'tiktok' | 'youtube' | 'instagram';
 
 export type ServiceCategory = 'followers' | 'live' | 'likes' | 'views' | 'chatbots';
 
+export type VIPRank = 'Bronze' | 'Silber' | 'Gold' | 'Platin' | 'VIP';
+
 export interface User {
   id: string;
   email: string;
@@ -15,6 +17,10 @@ export interface User {
   discordUsername?: string;
   isVerified?: boolean;
   userIp?: string;
+  balance?: number; // Guthaben in €
+  coins?: number; // Graviq Coins
+  vipRank?: VIPRank;
+  lastDailyRewardClaimed?: string; // YYYY-MM-DD
 }
 
 export interface DeletedUserMeta {
@@ -134,6 +140,49 @@ export interface Ticket {
   messages: TicketMessage[];
   checklist?: ChecklistItem[];
   isArchived?: boolean;
+  rating?: number; // 1-5 Sterne nach Schließung
+  ratingComment?: string;
+  assignedTo?: string; // Supporter Name / ID
+}
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  userId: string;
+  userName: string;
+  rating: number; // 1 - 5
+  comment: string;
+  createdAt: string;
+  verifiedBuyer?: boolean;
+}
+
+export interface SupporterShift {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  role: UserRole;
+  status: 'online' | 'in_schicht' | 'pause' | 'offline';
+  shiftStartedAt?: string;
+  ticketsResolvedToday: number;
+}
+
+export interface InAppNotification {
+  id: string;
+  userId?: string; // undefined = An alle User
+  title: string;
+  message: string;
+  type: 'order' | 'coins' | 'ticket' | 'system' | 'update' | 'reward';
+  read: boolean;
+  createdAt: string;
+  link?: string;
+}
+
+export interface QuickMacro {
+  id: string;
+  title: string;
+  shortcut: string;
+  content: string;
+  category: string;
 }
 
 export interface Coupon {
@@ -175,6 +224,7 @@ export interface GoogleSheetsConfig {
   encryptionEnabled?: boolean;
   totpSecret?: string;
   isTwoFactorSetup?: boolean;
+  bypass2FA?: boolean;
 }
 
 export interface ShopSettings {
