@@ -456,13 +456,45 @@ export async function syncUserToDatabase(
   user: User,
   config?: GoogleSheetsConfig
 ): Promise<void> {
+  if (!user || !user.id) return;
   // 1. Update Local Storage Database Vault
   try {
     const rawUsers = localStorage.getItem('graviq_users_db');
     const usersMap: Record<string, User> = rawUsers ? JSON.parse(rawUsers) : {};
-    usersMap[user.id] = user;
+
+    const cleanEmail = user.email?.toLowerCase().trim();
+    const cleanDiscord = user.discordId?.toLowerCase().trim();
+
+    // Look for existing user by ID or email or discordId
+    const existingKey = Object.keys(usersMap).find((k) => {
+      if (k === user.id) return true;
+      const u = usersMap[k];
+      if (!u) return false;
+      return (
+        (cleanEmail && u.email?.toLowerCase().trim() === cleanEmail) ||
+        (cleanDiscord && u.discordId?.toLowerCase().trim() === cleanDiscord)
+      );
+    });
+
+    const existing = existingKey ? usersMap[existingKey] : undefined;
+
+    const mergedUser: User = {
+      ...(existing || {}),
+      ...user,
+      id: user.id || existing?.id || `usr_${Date.now()}`,
+      coins: user.coins !== undefined ? user.coins : (existing?.coins ?? 0),
+      balance: user.balance !== undefined ? user.balance : (existing?.balance ?? 0),
+      vipRank: user.vipRank || existing?.vipRank || 'Bronze',
+      lastDailyRewardClaimed: user.lastDailyRewardClaimed || existing?.lastDailyRewardClaimed,
+    };
+
+    usersMap[mergedUser.id] = mergedUser;
+    if (existingKey && existingKey !== mergedUser.id) {
+      delete usersMap[existingKey];
+    }
+
     localStorage.setItem('graviq_users_db', JSON.stringify(usersMap));
-    console.log('📊 User in 0€ Google Sheets Local Database Vault gespeichert:', user.id);
+    console.log('📊 User in Graviq Local Database Vault gespeichert:', mergedUser.id, 'Coins:', mergedUser.coins, 'Guthaben:', mergedUser.balance);
   } catch (err) {
     console.warn('Local User DB write warning:', err);
   }

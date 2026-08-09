@@ -52,6 +52,7 @@ import { sendDiscordLog, AuditLogEntry } from '../services/discordLogger';
 interface ShopContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  updateUser: (userId: string, updatedFields: Partial<User>) => void;
   login: (email: string, pass: string) => boolean;
   loginWithDiscord: (overrideClientId?: string) => boolean;
   logout: () => void;
@@ -609,6 +610,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('graviq_current_user', JSON.stringify(currentUser));
+      syncUserToDatabase(currentUser);
     } else {
       localStorage.removeItem('graviq_current_user');
     }
@@ -741,22 +743,120 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  // Helper to look up an existing user in database vault, support accounts, or admin
+  const findUserInDatabase = (identifier: string): User | null => {
+    if (!identifier) return null;
+    const clean = identifier.toLowerCase().trim();
+    if (!clean) return null;
+
+    // 1. Check active currentUser first
+    if (currentUser) {
+      const cId = currentUser.id?.toLowerCase().trim();
+      const cEmail = currentUser.email?.toLowerCase().trim();
+      const cDiscordId = currentUser.discordId?.toLowerCase().trim();
+      const cDiscordUser = currentUser.discordUsername?.toLowerCase().trim();
+      const cName = currentUser.name?.toLowerCase().trim();
+
+      if (
+        (cId && cId === clean) ||
+        (cEmail && cEmail === clean) ||
+        (cDiscordId && cDiscordId === clean) ||
+        (cDiscordId && `usr_discord_${cDiscordId}` === clean) ||
+        (cDiscordUser && cDiscordUser === clean) ||
+        (cName && cName === clean)
+      ) {
+        return currentUser;
+      }
+    }
+
+    // 2. Check local storage user db vault
+    try {
+      const raw = localStorage.getItem('graviq_users_db');
+      if (raw) {
+        const parsed: Record<string, User> = JSON.parse(raw);
+        if (parsed[identifier]) return parsed[identifier];
+
+        const match = Object.values(parsed).find((u) => {
+          if (!u) return false;
+          const uId = u.id?.toLowerCase().trim();
+          const uEmail = u.email?.toLowerCase().trim();
+          const uDiscordId = u.discordId?.toLowerCase().trim();
+          const uDiscordUser = u.discordUsername?.toLowerCase().trim();
+          const uName = u.name?.toLowerCase().trim();
+
+          return (
+            (uId && uId === clean) ||
+            (uEmail && uEmail === clean) ||
+            (uDiscordId && uDiscordId === clean) ||
+            (uDiscordId && `usr_discord_${uDiscordId}` === clean) ||
+            (uDiscordUser && uDiscordUser === clean) ||
+            (uName && uName === clean)
+          );
+        });
+
+        if (match) return match;
+      }
+    } catch (_) {}
+
+    // 3. Check support accounts
+    const suppMatch = supportAccounts.find((s) => {
+      const sId = s.id?.toLowerCase().trim();
+      const sEmail = s.email?.toLowerCase().trim();
+      const sDiscordId = s.discordId?.toLowerCase().trim();
+      const sDiscordUser = s.discordUsername?.toLowerCase().trim();
+      const sName = s.name?.toLowerCase().trim();
+
+      return (
+        (sId && sId === clean) ||
+        (sEmail && sEmail === clean) ||
+        (sDiscordId && sDiscordId === clean) ||
+        (sDiscordUser && sDiscordUser === clean) ||
+        (sName && sName === clean)
+      );
+    });
+    if (suppMatch) return suppMatch;
+
+    // 4. Check initial admin user
+    const aEmail = INITIAL_ADMIN_USER.email?.toLowerCase().trim();
+    const aName = INITIAL_ADMIN_USER.name?.toLowerCase().trim();
+    if (clean === INITIAL_ADMIN_USER.id.toLowerCase() || (aEmail && clean === aEmail) || (aName && clean === aName)) {
+      return INITIAL_ADMIN_USER;
+    }
+
+    return null;
+  };
+
+  const updateUser = (userId: string, updatedFields: Partial<User>) => {
+    const existing = findUserInDatabase(userId);
+    if (!existing) return;
+
+    const newCoins = updatedFields.coins !== undefined ? updatedFields.coins : (existing.coins || 0);
+    const updatedUser: User = {
+      ...existing,
+      ...updatedFields,
+      coins: newCoins,
+      balance: updatedFields.balance !== undefined ? updatedFields.balance : (existing.balance || 0),
+      vipRank: updatedFields.coins !== undefined ? calculateVipRank(newCoins) : (updatedFields.vipRank || existing.vipRank || 'Bronze'),
+    };
+
+    if (currentUser && (currentUser.id === userId || (currentUser.email && currentUser.email.toLowerCase() === existing.email.toLowerCase()))) {
+      setCurrentUser(updatedUser);
+    }
+
+    syncUserToDatabase(updatedUser);
+
+    setSupportAccounts((prev) =>
+      prev.map((s) => (s.id === userId || (s.email && s.email.toLowerCase() === existing.email.toLowerCase()) ? updatedUser : s))
+    );
+
+    triggerGoogleSheetsFullSync();
+  };
+
   // Combined User list for Admin User Management
   const allUsers: User[] = React.useMemo(() => {
     const usersMap = new Map<string, User>();
-    if (!isUserDeleted(INITIAL_ADMIN_USER)) {
-      usersMap.set(INITIAL_ADMIN_USER.id, INITIAL_ADMIN_USER);
-    }
-    supportAccounts.forEach((u) => {
-      if (!isUserDeleted(u)) {
-        usersMap.set(u.id, u);
-      }
-    });
-    if (currentUser && !isUserDeleted(currentUser)) {
-      usersMap.set(currentUser.id, currentUser);
-    }
 
-    // load from local storage user db vault
+    // Load from local storage user db vault first
     try {
       const raw = localStorage.getItem('graviq_users_db');
       if (raw) {
@@ -768,6 +868,22 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
     } catch (_) {}
+
+    if (!isUserDeleted(INITIAL_ADMIN_USER)) {
+      if (!usersMap.has(INITIAL_ADMIN_USER.id)) {
+        usersMap.set(INITIAL_ADMIN_USER.id, INITIAL_ADMIN_USER);
+      }
+    }
+
+    supportAccounts.forEach((u) => {
+      if (!isUserDeleted(u)) {
+        usersMap.set(u.id, u);
+      }
+    });
+
+    if (currentUser && !isUserDeleted(currentUser)) {
+      usersMap.set(currentUser.id, currentUser);
+    }
 
     return Array.from(usersMap.values());
   }, [currentUser, supportAccounts, deletedUserIds]);
@@ -1006,22 +1122,41 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           );
         });
 
+        const existing = findUserInDatabase(payload.id) || (userEmail ? findUserInDatabase(userEmail) : null) || (payload.username ? findUserInDatabase(payload.username) : null);
+
         const assignedRole: UserRole = isStraussAdmin
           ? 'admin'
           : foundSupport
           ? foundSupport.role
-          : 'kunde';
+          : (existing?.role || 'kunde');
 
-        const loggedInUser: User = {
-          id: userId,
-          email: payload.email,
-          name: payload.username,
-          role: assignedRole,
-          discordId: payload.id,
-          discordUsername: payload.discordTag,
-          avatarUrl: payload.avatarUrl,
-          createdAt: new Date().toISOString(),
-        };
+        const loggedInUser: User = existing
+          ? {
+              ...existing,
+              email: payload.email || existing.email,
+              name: payload.username || existing.name,
+              role: assignedRole,
+              discordId: payload.id,
+              discordUsername: payload.discordTag,
+              avatarUrl: payload.avatarUrl || existing.avatarUrl,
+              coins: existing.coins ?? 0,
+              balance: existing.balance ?? 0,
+              vipRank: existing.vipRank || calculateVipRank(existing.coins || 0),
+            }
+          : {
+              id: userId,
+              email: payload.email,
+              name: payload.username,
+              role: assignedRole,
+              discordId: payload.id,
+              discordUsername: payload.discordTag,
+              avatarUrl: payload.avatarUrl,
+              coins: 0,
+              balance: 0,
+              vipRank: 'Bronze',
+              createdAt: new Date().toISOString(),
+            };
+
         setCurrentUser(loggedInUser);
         syncUserToDatabase(loggedInUser);
 
@@ -1029,7 +1164,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           category: 'user',
           level: 'success',
           action: 'Anmeldung über Discord OAuth',
-          details: `Benutzer ${loggedInUser.name} (${loggedInUser.email}) hat sich über Discord angemeldet.`,
+          details: `Benutzer ${loggedInUser.name} (${loggedInUser.email}) hat sich über Discord angemeldet. (Coins: ${loggedInUser.coins}, Balance: ${(loggedInUser.balance || 0).toFixed(2)} €)`,
           userId: loggedInUser.id,
           userName: loggedInUser.name,
           discordId: loggedInUser.discordId,
@@ -1042,7 +1177,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [shopSettings, deletedUserIds]);
+  }, [shopSettings, deletedUserIds, supportAccounts]);
 
   // Auth Methods
   const login = (email: string, pass: string): boolean => {
@@ -1053,61 +1188,72 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
     
+    const existingUser = findUserInDatabase(cleanEmail);
+
     // Admin login for Strauss
     if (cleanEmail === 'strauss@graviq.shop' || cleanEmail === 'straussiimausii' || cleanEmail === 'admin@graviq.shop') {
-      setCurrentUser(INITIAL_ADMIN_USER);
+      const adminUser = existingUser || INITIAL_ADMIN_USER;
+      const loggedInAdmin: User = {
+        ...adminUser,
+        role: 'admin',
+        coins: adminUser.coins ?? 1000,
+        balance: adminUser.balance ?? 100.00,
+        vipRank: adminUser.vipRank || 'VIP',
+      };
+      setCurrentUser(loggedInAdmin);
+      syncUserToDatabase(loggedInAdmin);
+
       logAuditEvent({
         category: 'user',
         level: 'success',
         action: 'Admin Login (Strauss)',
         details: 'Admin-Zugang für Strauss erfolgreich autorisiert.',
-        userId: INITIAL_ADMIN_USER.id,
-        userName: INITIAL_ADMIN_USER.name,
+        userId: loggedInAdmin.id,
+        userName: loggedInAdmin.name,
         result: 'Erfolgreich',
       });
+      triggerGoogleSheetsFullSync();
       return true;
     }
 
-    // Check support users
-    const foundSupport = supportAccounts.find((s) => {
-      const sEmail = s.email?.toLowerCase().trim();
-      const sDiscordUser = s.discordUsername?.toLowerCase().trim();
-      const sName = s.name?.toLowerCase().trim();
-      return (
-        (sEmail && sEmail === cleanEmail) ||
-        (sDiscordUser && sDiscordUser === cleanEmail) ||
-        (sName && sName === cleanEmail)
-      );
-    });
-    if (foundSupport) {
-      setCurrentUser(foundSupport);
+    // Support account or existing user
+    if (existingUser) {
+      setCurrentUser(existingUser);
+      syncUserToDatabase(existingUser);
+
       logAuditEvent({
         category: 'user',
         level: 'success',
-        action: 'Support Login',
-        details: `Support-Mitarbeiter ${foundSupport.name} (${foundSupport.role}) angemeldet.`,
-        userId: foundSupport.id,
-        userName: foundSupport.name,
+        action: 'Benutzer Login',
+        details: `Benutzer ${existingUser.name} (${existingUser.email}) angemeldet. Coins: ${existingUser.coins || 0}, Guthaben: ${(existingUser.balance || 0).toFixed(2)} €`,
+        userId: existingUser.id,
+        userName: existingUser.name,
         result: 'Erfolgreich',
       });
+
+      triggerGoogleSheetsFullSync();
       return true;
     }
 
-    // Customer login
+    // Customer login for brand new email
     const customerUser: User = {
       id: `usr_k_${Date.now()}`,
       email: cleanEmail,
       name: cleanEmail.split('@')[0],
       role: 'kunde',
+      coins: 0,
+      balance: 0,
+      vipRank: 'Bronze',
       createdAt: new Date().toISOString(),
     };
     setCurrentUser(customerUser);
+    syncUserToDatabase(customerUser);
 
     logAuditEvent({
       category: 'user',
       level: 'info',
       action: 'Kunden Login',
-      details: `Kunde ${customerUser.name} (${customerUser.email}) angemeldet.`,
+      details: `Neuer Kunde ${customerUser.name} (${customerUser.email}) angemeldet.`,
       userId: customerUser.id,
       userName: customerUser.name,
       result: 'Erfolgreich',
@@ -1134,6 +1280,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     if (currentUser) {
+      syncUserToDatabase(currentUser);
       logAuditEvent({
         category: 'user',
         level: 'info',
@@ -1149,14 +1296,37 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = (name: string, email: string, pass: string): boolean => {
+    const cleanEmail = email.toLowerCase().trim();
+
+    if (deletedUserIds.some((id) => id.toLowerCase().trim() === cleanEmail)) {
+      alert('⚠️ Dieses Konto wurde dauerhaft gelöscht.');
+      return false;
+    }
+
+    const existingUser = findUserInDatabase(cleanEmail);
+    if (existingUser) {
+      const updatedUser: User = {
+        ...existingUser,
+        name: name || existingUser.name,
+      };
+      setCurrentUser(updatedUser);
+      syncUserToDatabase(updatedUser);
+      triggerGoogleSheetsFullSync();
+      return true;
+    }
+
     const newUser: User = {
       id: `usr_k_${Date.now()}`,
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       name,
       role: 'kunde',
+      coins: 0,
+      balance: 0,
+      vipRank: 'Bronze',
       createdAt: new Date().toISOString(),
     };
     setCurrentUser(newUser);
+    syncUserToDatabase(newUser);
 
     logAuditEvent({
       category: 'user',
@@ -2030,6 +2200,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         setCurrentUser,
+        updateUser,
         login,
         loginWithDiscord,
         logout,
