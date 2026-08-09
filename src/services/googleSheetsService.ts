@@ -1,4 +1,4 @@
-import { Order, ServicePackage, ShopSettings, User, Ticket, ResetCode, GoogleSheetsConfig, SheetUser, SheetResetCode, SheetProduct, SheetOrder } from '../types';
+import { Order, ServicePackage, ShopSettings, User, Ticket, ResetCode, GoogleSheetsConfig, SheetUser, SheetResetCode, SheetProduct, SheetOrder, SupporterShift, ProductReview } from '../types';
 import { encryptData } from '../utils/crypto';
 import { AuditLogEntry } from './discordLogger';
 
@@ -151,6 +151,8 @@ export async function createDatabaseSpreadsheet(accessToken: string): Promise<{ 
         { properties: { title: 'Audit_Logs' } },
         { properties: { title: 'Produkte_Products' } },
         { properties: { title: 'AntiSpam_Sperrliste' } },
+        { properties: { title: 'Supporter_Schichten' } },
+        { properties: { title: 'Produkt_Bewertungen' } },
         { properties: { title: 'Encrypted_Vault' } },
       ],
     }),
@@ -513,6 +515,8 @@ export async function syncShopToGoogleSheets(
     resetCodes?: ResetCode[];
     auditLogs?: AuditLogEntry[];
     shopSettings?: ShopSettings;
+    supporterShifts?: SupporterShift[];
+    productReviews?: ProductReview[];
   },
   options?: {
     encryptionEnabled?: boolean;
@@ -525,9 +529,11 @@ export async function syncShopToGoogleSheets(
   const resetCodes = data?.resetCodes || [];
   const auditLogs = data?.auditLogs || [];
   const shopSettings = data?.shopSettings || ({} as ShopSettings);
+  const supporterShifts = data?.supporterShifts || [];
+  const productReviews = data?.productReviews || [];
 
   // 1. Benutzer_Users
-  const userHeaders = ['User ID', 'Name', 'E-Mail', 'Discord ID', 'Discord Username', 'Rolle', 'IP (DSGVO)', 'Registriert am'];
+  const userHeaders = ['User ID', 'Name', 'E-Mail', 'Discord ID', 'Discord Username', 'Rolle', 'Coins', 'Guthaben (€)', 'VIP Rang', 'IP (DSGVO)', 'Registriert am'];
   const userRows = [userHeaders];
   for (const u of users) {
     userRows.push([
@@ -537,6 +543,9 @@ export async function syncShopToGoogleSheets(
       u.discordId || '-',
       u.discordUsername || '-',
       u.role,
+      String(u.coins || 0),
+      (u.balance || 0).toFixed(2) + ' €',
+      u.vipRank || 'Bronze',
       u.userIp || 'x.x.x.x',
       new Date(u.createdAt).toLocaleString('de-DE'),
     ]);
@@ -598,7 +607,7 @@ export async function syncShopToGoogleSheets(
   }
 
   // 4. Support_Tickets
-  const ticketHeaders = ['Ticket ID', 'User ID', 'Kunde Name', 'Kunde E-Mail', 'Betreff', 'Kategorie', 'Priorität', 'Status', 'Letzte Aktualisierung', 'Anzahl Nachrichten'];
+  const ticketHeaders = ['Ticket ID', 'User ID', 'Kunde Name', 'Kunde E-Mail', 'Betreff', 'Kategorie', 'Priorität', 'Status', 'Kundenbewertung', 'Bewertungskommentar', 'Letzte Aktualisierung', 'Anzahl Nachrichten'];
   const ticketRows = [ticketHeaders];
   for (const t of tickets) {
     ticketRows.push([
@@ -610,6 +619,8 @@ export async function syncShopToGoogleSheets(
       t.category,
       t.priority,
       t.status,
+      t.rating ? `${t.rating}/5.0 ⭐` : 'Keine Bewertung',
+      t.ratingComment || '-',
       new Date(t.updatedAt).toLocaleString('de-DE'),
       String(t.messages.length),
     ]);
@@ -650,7 +661,38 @@ export async function syncShopToGoogleSheets(
     spamRows.push(['E-Mail Adresse', email, new Date().toLocaleDateString('de-DE'), 'GESPERRT']);
   }
 
-  // 8. Encrypted_Vault Payload
+  // 8. Supporter_Schichten
+  const supporterShiftHeaders = ['User ID', 'Name', 'E-Mail', 'Rolle', 'Schicht Status', 'Schicht Start', 'Gelöste Tickets Heute'];
+  const supporterShiftRows = [supporterShiftHeaders];
+  for (const s of supporterShifts) {
+    supporterShiftRows.push([
+      s.userId,
+      s.userName,
+      s.userEmail || '-',
+      s.role,
+      s.status.toUpperCase(),
+      s.shiftStartedAt ? new Date(s.shiftStartedAt).toLocaleString('de-DE') : '-',
+      String(s.ticketsResolvedToday || 0),
+    ]);
+  }
+
+  // 9. Produkt_Bewertungen
+  const productReviewHeaders = ['Bewertung ID', 'Produkt ID', 'User ID', 'Kunde Name', 'Sterne Rating', 'Kommentar', 'Verifizierter Käufer', 'Erstellt am'];
+  const productReviewRows = [productReviewHeaders];
+  for (const r of productReviews) {
+    productReviewRows.push([
+      r.id,
+      r.productId,
+      r.userId,
+      r.userName,
+      `${r.rating}/5.0 ⭐`,
+      r.comment,
+      r.verifiedBuyer ? 'JA' : 'NEIN',
+      new Date(r.createdAt).toLocaleString('de-DE'),
+    ]);
+  }
+
+  // 10. Encrypted_Vault Payload
   const fullPayload = JSON.stringify({
     timestamp: new Date().toISOString(),
     users,
@@ -660,6 +702,8 @@ export async function syncShopToGoogleSheets(
     resetCodes,
     auditLogs: auditLogs.slice(0, 100),
     shopSettings,
+    supporterShifts,
+    productReviews,
   });
 
   const vaultRows = [
@@ -679,6 +723,8 @@ export async function syncShopToGoogleSheets(
     { range: 'Audit_Logs!A1:Z5000', values: auditRows },
     { range: 'Produkte_Products!A1:Z1000', values: productRows },
     { range: 'AntiSpam_Sperrliste!A1:Z1000', values: spamRows },
+    { range: 'Supporter_Schichten!A1:Z1000', values: supporterShiftRows },
+    { range: 'Produkt_Bewertungen!A1:Z2000', values: productReviewRows },
     { range: 'Encrypted_Vault!A1:B10', values: vaultRows },
   ];
 
@@ -730,7 +776,10 @@ export async function downloadGoogleSheetsCSV(
     orders?: Order[];
     resetCodes?: ResetCode[];
     products?: ServicePackage[];
+    tickets?: Ticket[];
     shopSettings?: ShopSettings;
+    supporterShifts?: SupporterShift[];
+    productReviews?: ProductReview[];
   },
   options?: { encryptionEnabled?: boolean }
 ): Promise<void> {
@@ -738,18 +787,39 @@ export async function downloadGoogleSheetsCSV(
   const orders = data?.orders || [];
   const resetCodes = data?.resetCodes || [];
   const products = data?.products || [];
+  const tickets = data?.tickets || [];
   const shopSettings = data?.shopSettings || ({} as ShopSettings);
+  const supporterShifts = data?.supporterShifts || [];
+  const productReviews = data?.productReviews || [];
 
   let csv = '--- BENUTZER DATENBANK ---\n';
-  csv += 'User_ID,Name,Email,Discord_ID,Discord_Username,Rolle,Registriert_Am\n';
+  csv += 'User_ID,Name,Email,Discord_ID,Discord_Username,Rolle,Coins,Guthaben,VIP_Rang,Registriert_Am\n';
   for (const u of users) {
-    csv += `"${u.id}","${u.name}","${u.email}","${u.discordId || '-'}","${u.discordUsername || '-'}","${u.role}","${new Date(u.createdAt).toLocaleDateString('de-DE')}"\n`;
+    csv += `"${u.id}","${u.name}","${u.email}","${u.discordId || '-'}","${u.discordUsername || '-'}","${u.role}","${u.coins || 0}","${(u.balance || 0).toFixed(2)} €","${u.vipRank || 'Bronze'}","${new Date(u.createdAt).toLocaleDateString('de-DE')}"\n`;
   }
 
   csv += '\n--- BESTELLUNGEN (PAYPAL KÄUFERSCHUTZ AUSGESCHLOSSEN) ---\n';
   csv += 'Bestell_ID,Datum,Kunde,Email,Produkte,Gesamtpreis,Zahlungsart,Käuferschutz_Status,Status\n';
   for (const o of orders) {
     csv += `"${o.id}","${new Date(o.createdAt).toLocaleString('de-DE')}","${o.userName}","${o.userEmail}","${o.items.map((i) => i.title).join(' | ')}","${o.totalPrice.toFixed(2)} €","${o.paymentMethod}","AUSGESCHLOSSEN (Digitale Sofort-Lieferung)","${o.status}"\n`;
+  }
+
+  csv += '\n--- SUPPORT TICKETS & BEWERTUNGEN ---\n';
+  csv += 'Ticket_ID,Kunde,Email,Betreff,Kategorie,Priorität,Status,Bewertung,Kommentar,Aktualisiert_Am\n';
+  for (const t of tickets) {
+    csv += `"${t.id}","${t.userName}","${t.userEmail}","${t.subject}","${t.category}","${t.priority}","${t.status}","${t.rating ? `${t.rating}/5.0` : '-'}","${t.ratingComment || '-'}","${new Date(t.updatedAt).toLocaleString('de-DE')}"\n`;
+  }
+
+  csv += '\n--- SUPPORTER LIVE SCHICHTEN ---\n';
+  csv += 'User_ID,Name,Email,Rolle,Status,Schicht_Start,Gelöste_Tickets\n';
+  for (const s of supporterShifts) {
+    csv += `"${s.userId}","${s.userName}","${s.userEmail || '-'}","${s.role}","${s.status.toUpperCase()}","${s.shiftStartedAt ? new Date(s.shiftStartedAt).toLocaleString('de-DE') : '-'}","${s.ticketsResolvedToday || 0}"\n`;
+  }
+
+  csv += '\n--- PRODUKT BEWERTUNGEN ---\n';
+  csv += 'Bewertung_ID,Produkt_ID,Kunde,Sterne,Kommentar,Verifiziert,Datum\n';
+  for (const r of productReviews) {
+    csv += `"${r.id}","${r.productId}","${r.userName}","${r.rating}/5.0","${r.comment}","${r.verifiedBuyer ? 'JA' : 'NEIN'}","${new Date(r.createdAt).toLocaleDateString('de-DE')}"\n`;
   }
 
   csv += '\n--- SUPPORT RESET CODES ---\n';

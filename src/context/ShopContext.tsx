@@ -847,6 +847,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tickets,
         auditLogs,
         shopSettings,
+        supporterShifts,
+        productReviews,
       });
       console.log('⚡ Background Google Apps Script Webhook Sync executed!');
     }
@@ -872,6 +874,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             resetCodes,
             auditLogs,
             shopSettings,
+            supporterShifts,
+            productReviews,
           },
           {
             encryptionEnabled: shopSettings.googleSheetsConfig?.encryptionEnabled ?? false,

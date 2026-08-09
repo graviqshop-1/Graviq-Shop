@@ -41,6 +41,413 @@ import {
   Layers,
 } from 'lucide-react';
 
+const APPS_SCRIPT_FULL_CODE = `/**
+ * GRAVIQ SHOP - ULTRA GOOGLE SHEETS LIVE SYNC SCRIPT (v3.5 Premium Edition)
+ * 
+ * ANLEITUNG:
+ * 1. Öffne deine Google Tabelle (Google Sheets)
+ * 2. Klicke oben auf: Erweiterungen -> Apps Script
+ * 3. Lösche den vorhandenen Code und füge diesen Code ein.
+ * 4. Klicke oben rechts auf "Bereitstellen" -> "Neue Bereitstellung"
+ * 5. Wähle Typ: "Web-App"
+ * 6. Ausführen als: "Ich" (Deine E-Mail)
+ * 7. Wer hat Zugriff: "Jeder" (Anyone) -> WICHTIG!
+ * 8. Klicke auf "Bereitstellen", erteile die Berechtigung und kopiere die Web-App URL in den Graviq Shop!
+ */
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "online",
+    service: "Graviq Shop Google Sheets Webhook API v3.5",
+    time: new Date().toLocaleString("de-DE"),
+    message: "Die Webhook-Schnittstelle ist aktiv und bereit zum Empfangen von Live-Daten!"
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    
+    if (!e || !e.postData || !e.postData.contents) {
+      return responseJSON({ status: "error", message: "Keine Daten empfangen." });
+    }
+
+    var data;
+    try {
+      data = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return responseJSON({ status: "error", message: "Ungültiges JSON Format: " + parseErr.toString() });
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes || data.tickets || data.supporterShifts || data.productReviews) {      
+      // 1. KPI Dashboard Tab
+      updateKpiDashboard(ss, data);
+
+      // 2. Nutzer Tabellenblatt
+      if (data.users && Array.isArray(data.users)) {
+        writeUsersSheet(ss, data.users);
+      }
+
+      // 3. Bestellungen Tabellenblatt
+      if (data.orders && Array.isArray(data.orders)) {
+        writeOrdersSheet(ss, data.orders);
+      }
+
+      // 4. Produkte Tabellenblatt
+      if (data.products && Array.isArray(data.products)) {
+        writeProductsSheet(ss, data.products);
+      }
+
+      // 5. Support Tickets Tabellenblatt
+      if (data.tickets && Array.isArray(data.tickets)) {
+        writeTicketsSheet(ss, data.tickets);
+      }
+
+      // 6. Supporter Schichten Tabellenblatt
+      if (data.supporterShifts && Array.isArray(data.supporterShifts)) {
+        writeSupporterShiftsSheet(ss, data.supporterShifts);
+      }
+
+      // 7. Produkt-Bewertungen Tabellenblatt
+      if (data.productReviews && Array.isArray(data.productReviews)) {
+        writeProductReviewsSheet(ss, data.productReviews);
+      }
+
+      // 8. ResetCodes Tabellenblatt
+      if (data.resetCodes && Array.isArray(data.resetCodes)) {
+        writeResetCodesSheet(ss, data.resetCodes);
+      }
+    }
+
+    if (data.singleEvent || (data.events && Array.isArray(data.events))) {
+      appendLiveLogs(ss, data.events || [data.singleEvent]);
+    }
+
+    return responseJSON({ 
+      status: "success", 
+      message: "Graviq Shop Daten erfolgreich in Google Sheet synchronisiert!",
+      syncedAt: new Date().toLocaleString("de-DE")
+    });
+
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* HELPER FUNCTIONS FOR CLEAN SHEET FORMATTING */
+
+function getOrCreateSheet(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+  sheet.setHiddenGridlines(false);
+  return sheet;
+}
+
+function writeAndFormatSheet(sheet, rowsArray, headerBgColor, headerTextColor, accentZebraColor) {
+  if (!rowsArray || rowsArray.length === 0) return;
+  sheet.clearContents();
+  sheet.clearFormats();
+  sheet.setHiddenGridlines(false);
+
+  var numRows = rowsArray.length;
+  var numCols = rowsArray[0].length;
+
+  var range = sheet.getRange(1, 1, numRows, numCols);
+  range.setValues(rowsArray);
+
+  // Format Header
+  var headerRange = sheet.getRange(1, 1, 1, numCols);
+  headerRange
+    .setFontWeight("bold")
+    .setBackground(headerBgColor)
+    .setFontColor(headerTextColor)
+    .setFontSize(11)
+    .setVerticalAlignment("middle")
+    .setHorizontalAlignment("center");
+
+  sheet.setRowHeight(1, 32);
+  sheet.setFrozenRows(1);
+
+  // Alternating Zebra Row Colors
+  if (numRows > 1) {
+    var bodyRange = sheet.getRange(2, 1, numRows - 1, numCols);
+    bodyRange.setVerticalAlignment("middle").setFontSize(10);
+
+    for (var r = 2; r <= numRows; r++) {
+      sheet.setRowHeight(r, 24);
+      var rowRange = sheet.getRange(r, 1, 1, numCols);
+      if (r % 2 === 0) {
+        rowRange.setBackground(accentZebraColor || "#f8fafc");
+      } else {
+        rowRange.setBackground("#ffffff");
+      }
+    }
+  }
+
+  for (var c = 1; c <= numCols; c++) {
+    sheet.autoResizeColumn(c);
+    var colWidth = sheet.getColumnWidth(c);
+    if (colWidth < 120) sheet.setColumnWidth(c, 120);
+  }
+}
+
+function writeUsersSheet(ss, users) {
+  var sheet = getOrCreateSheet(ss, "👥 Nutzer");
+  var headers = ["User ID / Discord ID", "Name / Username", "E-Mail", "Rolle", "Coins", "Guthaben (EUR)", "VIP Rang", "Erstellt am", "Status"];
+  var rows = [headers];
+
+  users.forEach(function(u) {
+    rows.push([
+      u.discordId || u.id || "-",
+      u.username || u.name || "-",
+      u.email || "-",
+      (u.role || "kunde").toUpperCase(),
+      Number(u.coins || 0),
+      Number(u.balance || 0),
+      u.vipRank || "Bronze",
+      u.createdAt ? new Date(u.createdAt).toLocaleString("de-DE") : "-",
+      u.isBlocked ? "🔴 Gesperrt" : "🟢 Aktiv"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#1e1b4b", "#c084fc", "#f3e8ff");
+  sheet.getRange(2, 5, rows.length - 1, 1).setNumberFormat('#,##0').setHorizontalAlignment("right");
+  sheet.getRange(2, 6, rows.length - 1, 1).setNumberFormat('€#,##0.00').setHorizontalAlignment("right");
+}
+
+function writeOrdersSheet(ss, orders) {
+  var sheet = getOrCreateSheet(ss, "📦 Bestellungen");
+  var headers = ["Bestell ID", "Kunde", "E-Mail", "Gekaufte Produkte", "Zahlungsart", "Gesamtsumme (EUR)", "Status", "Datum / Uhrzeit", "Ziel-Link"];
+  var rows = [headers];
+
+  orders.forEach(function(o) {
+    var itemsStr = "";
+    if (o.items && Array.isArray(o.items)) {
+      itemsStr = o.items.map(function(i){ 
+        return (i.quantity || 1) + "x " + (i.title || i.name || "Artikel"); 
+      }).join("; ");
+    } else if (typeof o.items === "string") {
+      itemsStr = o.items;
+    }
+
+    rows.push([
+      o.id || "-",
+      o.customerName || o.userName || "-",
+      o.customerEmail || o.userEmail || "-",
+      itemsStr || "-",
+      (o.paymentMethod || "PayPal").toUpperCase(),
+      Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0)),
+      (o.status || "abgeschlossen").toUpperCase(),
+      o.createdAt || o.date || "-",
+      o.targetLink || "-"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#0f172a", "#34d399", "#ecfdf5");
+  sheet.getRange(2, 6, rows.length - 1, 1).setNumberFormat('€#,##0.00').setHorizontalAlignment("right");
+}
+
+function writeProductsSheet(ss, products) {
+  var sheet = getOrCreateSheet(ss, "🏷️ Produkte");
+  var headers = ["Produkt ID", "Titel", "Kategorie", "Preis (EUR)", "Beliebtheit / VIP"];
+  var rows = [headers];
+
+  products.forEach(function(p) {
+    rows.push([
+      p.id || "-",
+      p.title || p.name || "-",
+      (p.category || "-").toUpperCase(),
+      Number(p.price !== undefined ? p.price : 0),
+      p.isPopular || p.popular ? "⭐ Beliebt" : "Standard"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#064e3b", "#6ee7b7", "#f0fdf4");
+  sheet.getRange(2, 4, rows.length - 1, 1).setNumberFormat('€#,##0.00').setHorizontalAlignment("right");
+}
+
+function writeTicketsSheet(ss, tickets) {
+  var sheet = getOrCreateSheet(ss, "🎧 Support Tickets");
+  var headers = ["Ticket ID", "Kunde Name", "E-Mail", "Betreff", "Kategorie", "Priorität", "Status", "Kundenbewertung", "Kommentar", "Erstellt am"];
+  var rows = [headers];
+
+  tickets.forEach(function(t) {
+    rows.push([
+      t.id || "-",
+      t.userName || "-",
+      t.userEmail || "-",
+      t.subject || "-",
+      (t.category || "Allgemein").toUpperCase(),
+      (t.priority || "mittel").toUpperCase(),
+      (t.status || "offen").toUpperCase(),
+      t.rating ? (t.rating + "/5.0 ⭐") : "Keine Bewertung",
+      t.ratingComment || "-",
+      t.createdAt ? new Date(t.createdAt).toLocaleString("de-DE") : "-"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#4c1d95", "#e9d5ff", "#faf5ff");
+}
+
+function writeSupporterShiftsSheet(ss, shifts) {
+  var sheet = getOrCreateSheet(ss, "🛡️ Supporter Schichten");
+  var headers = ["User ID", "Supporter Name", "E-Mail", "Rolle", "Schicht-Status", "Schicht Start", "Gelöste Tickets Heute"];
+  var rows = [headers];
+
+  shifts.forEach(function(s) {
+    rows.push([
+      s.userId || "-",
+      s.userName || "-",
+      s.userEmail || "-",
+      (s.role || "supporter").toUpperCase(),
+      (s.status || "offline").toUpperCase(),
+      s.shiftStartedAt ? new Date(s.shiftStartedAt).toLocaleString("de-DE") : "-",
+      Number(s.ticketsResolvedToday || 0)
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#1e293b", "#38bdf8", "#f0f9ff");
+  sheet.getRange(2, 7, rows.length - 1, 1).setNumberFormat('#,##0').setHorizontalAlignment("right");
+}
+
+function writeProductReviewsSheet(ss, reviews) {
+  var sheet = getOrCreateSheet(ss, "⭐ Bewertungen");
+  var headers = ["Bewertung ID", "Produkt ID", "Kunde Name", "Sterne Rating", "Kommentar", "Verifizierter Käufer", "Datum"];
+  var rows = [headers];
+
+  reviews.forEach(function(r) {
+    rows.push([
+      r.id || "-",
+      r.productId || "-",
+      r.userName || "-",
+      r.rating ? (r.rating + "/5.0 ⭐") : "5.0 ⭐",
+      r.comment || "-",
+      r.verifiedBuyer ? "JA ✅" : "NEIN",
+      r.createdAt ? new Date(r.createdAt).toLocaleString("de-DE") : "-"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#78350f", "#fde68a", "#fffbeb");
+}
+
+function writeResetCodesSheet(ss, resetCodes) {
+  var sheet = getOrCreateSheet(ss, "🔑 ResetCodes");
+  var headers = ["Sicherheitscode", "User / E-Mail", "Erstellt am", "Ablaufdatum", "Einmalig", "Status"];
+  var rows = [headers];
+
+  resetCodes.forEach(function(r) {
+    rows.push([
+      r.code || "-",
+      r.discordId || r.userId || r.userEmail || "-",
+      r.createdAt ? new Date(r.createdAt).toLocaleString("de-DE") : "-",
+      r.expiresAt ? new Date(r.expiresAt).toLocaleString("de-DE") : "-",
+      r.isOneTime !== undefined ? (r.isOneTime ? "JA" : "NEIN") : "JA",
+      r.used || r.status === "used" || r.status === "Eingelöst" ? "🔴 Eingelöst" : "🟢 Aktiv"
+    ]);
+  });
+
+  writeAndFormatSheet(sheet, rows, "#312e81", "#c7d2fe", "#eef2ff");
+}
+
+function appendLiveLogs(ss, eventsList) {
+  var sheet = getOrCreateSheet(ss, "⚡ Live Logs");
+  if (sheet.getLastRow() === 0) {
+    var headers = [["Zeitstempel", "Kategorie", "Aktion", "Beschreibung", "Benutzer / E-Mail", "Ergebnis"]];
+    sheet.getRange(1, 1, 1, 6).setValues(headers);
+    sheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#0284c7").setFontColor("#ffffff");
+  }
+
+  eventsList.forEach(function(ev) {
+    if (!ev) return;
+    sheet.appendRow([
+      ev.timestamp || new Date().toLocaleString("de-DE"),
+      (ev.category || "SYSTEM").toUpperCase(),
+      ev.actionName || ev.action || "Live-Aktion",
+      ev.description || ev.details || "-",
+      ev.userEmail || ev.userName || ev.performedBy || "-",
+      ev.result || "Erfolgreich"
+    ]);
+  });
+}
+
+function updateKpiDashboard(ss, data) {
+  var sheetKpi = getOrCreateSheet(ss, "📊 Übersicht");
+  sheetKpi.clearContents();
+  sheetKpi.clearFormats();
+  sheetKpi.setHiddenGridlines(false);
+
+  var totalOrders = (data.orders && Array.isArray(data.orders)) ? data.orders.length : 0;
+  var totalUsers = (data.users && Array.isArray(data.users)) ? data.users.length : 0;
+  var totalProducts = (data.products && Array.isArray(data.products)) ? data.products.length : 0;
+  var totalTickets = (data.tickets && Array.isArray(data.tickets)) ? data.tickets.length : 0;
+  var totalShifts = (data.supporterShifts && Array.isArray(data.supporterShifts)) ? data.supporterShifts.length : 0;
+  var totalReviews = (data.productReviews && Array.isArray(data.productReviews)) ? data.productReviews.length : 0;
+  
+  var openTickets = 0;
+  var totalRevenue = 0;
+
+  if (data.orders && Array.isArray(data.orders)) {
+    data.orders.forEach(function(o) {
+      var val = Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0));
+      if (!isNaN(val)) totalRevenue += val;
+    });
+  }
+
+  if (data.tickets && Array.isArray(data.tickets)) {
+    data.tickets.forEach(function(t) {
+      if (t.status === "offen" || t.status === "in_bearbeitung") openTickets++;
+    });
+  }
+
+  var dashboardRows = [
+    ["GRAVIQ SHOP - LIVE DATENBANK & PERFORMANCE DASHBOARD", ""],
+    ["Letzte Live-Synchronisation:", new Date().toLocaleString("de-DE")],
+    ["", ""],
+    ["KPI METRIK & METRIKEN", "WERT / STATUS"],
+    ["Gesamt-Umsatz (EUR)", totalRevenue],
+    ["Anzahl Bestellungen", totalOrders],
+    ["Registrierte Kunden", totalUsers],
+    ["Aktive Produkte im Shop", totalProducts],
+    ["Offene Support Tickets", openTickets],
+    ["Gesamt Support Tickets", totalTickets],
+    ["Aktive Supporter-Schichten", totalShifts],
+    ["Eingegangene Produkt-Bewertungen", totalReviews]
+  ];
+
+  sheetKpi.getRange(1, 1, dashboardRows.length, 2).setValues(dashboardRows);
+
+  sheetKpi.getRange("A1:B1").merge().setFontWeight("bold").setFontSize(14).setBackground("#0f172a").setFontColor("#38bdf8").setVerticalAlignment("middle");
+  sheetKpi.setRowHeight(1, 40);
+
+  sheetKpi.getRange("A2:B2").setFontStyle("italic").setFontSize(10).setFontColor("#64748b");
+  sheetKpi.getRange("A4:B4").setFontWeight("bold").setBackground("#1e293b").setFontColor("#f1f5f9").setFontSize(11);
+
+  sheetKpi.getRange("B5").setNumberFormat('€#,##0.00').setFontWeight("bold").setFontSize(12).setFontColor("#059669");
+  sheetKpi.getRange("B6:B12").setFontWeight("bold");
+
+  for (var r = 5; r <= 12; r++) {
+    sheetKpi.setRowHeight(r, 26);
+    if (r % 2 === 0) {
+      sheetKpi.getRange(r, 1, 1, 2).setBackground("#f8fafc");
+    }
+  }
+
+  sheetKpi.setColumnWidth(1, 260);
+  sheetKpi.setColumnWidth(2, 200);
+}
+
+function responseJSON(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+`;
+
 export const GoogleSheetsSecurityModule: React.FC = () => {
   const {
     users,
@@ -57,6 +464,8 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
     approveSyncEvents,
     dismissSyncEvents,
     clearAllSyncEvents,
+    supporterShifts,
+    productReviews,
   } = useShop();
 
   // Load stored Google Sheets Config from Shop Settings or local state
@@ -233,7 +642,7 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
     setStatusMessage({ type: 'info', text: '⏳ Generiere verschlüsselte Google Sheets CSV-Datei...' });
     try {
       await downloadGoogleSheetsCSV(
-        { users, orders, resetCodes, products, shopSettings },
+        { users, orders, resetCodes, products, tickets, shopSettings, supporterShifts, productReviews },
         { encryptionEnabled: isEncryptionOn }
       );
       setStatusMessage({
@@ -297,6 +706,8 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
           resetCodes,
           auditLogs,
           shopSettings,
+          supporterShifts,
+          productReviews,
         });
       } catch (e) {
         console.warn('Webhook sync error:', e);
@@ -318,7 +729,7 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
           await syncShopToGoogleSheets(
             activeToken,
             spreadsheetId,
-            { users, orders, products, tickets, resetCodes, auditLogs, shopSettings },
+            { users, orders, products, tickets, resetCodes, auditLogs, shopSettings, supporterShifts, productReviews },
             { encryptionEnabled: isEncryptionOn }
           );
           oauthSuccess = true;
@@ -639,298 +1050,14 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
                 <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
                   <li>Öffne deine Google Tabelle (Google Sheets).</li>
                   <li>Klicke oben auf <strong>Erweiterungen ➔ Apps Script</strong>.</li>
-                  <li>Ersetze den gesamten Code mit diesem optimierten Snippet (erstellt saubere Tabs für Bestellungen & Events):</li>
+                  <li>Ersetze den gesamten Code mit diesem optimierten Snippet:</li>
                 </ol>
 
                 <div className="relative bg-slate-900 p-3 rounded-lg border border-slate-800 font-mono text-[10px] text-amber-200 overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => {
-                      const snippet = `/**
- * GRAVIQ SHOP - ULTRA GOOGLE SHEETS LIVE SYNC SCRIPT (v3.0)
- * 
- * ANLEITUNG:
- * 1. Öffne deine Google Tabelle (Google Sheets)
- * 2. Klicke oben auf: Erweiterungen -> Apps Script
- * 3. Lösche den vorhandenen Code und füge diesen Code ein.
- * 4. Klicke oben rechts auf "Bereitstellen" -> "Neue Bereitstellung"
- * 5. Wähle Typ: "Web-App"
- * 6. Ausführen als: "Ich" (Deine E-Mail)
- * 7. Wer hat Zugriff: "Jeder" (Anyone) -> WICHTIG!
- * 8. Klicke auf "Bereitstellen", erteile die Berechtigung und kopiere die Web-App URL in den Graviq Shop!
- */
-
-function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({
-    status: "online",
-    service: "Graviq Shop Google Sheets Webhook API",
-    time: new Date().toLocaleString("de-DE"),
-    message: "Die Webhook-Schnittstelle ist aktiv und bereit zum Empfangen von Live-Daten!"
-  })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-    
-    if (!e || !e.postData || !e.postData.contents) {
-      return responseJSON({ status: "error", message: "Keine Daten empfangen." });
-    }
-
-    var data;
-    try {
-      data = JSON.parse(e.postData.contents);
-    } catch (parseErr) {
-      return responseJSON({ status: "error", message: "Ungültiges JSON Format: " + parseErr.toString() });
-    }
-
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes || data.tickets) {
-      
-      // 1. KPI Dashboard Tab
-      updateKpiDashboard(ss, data);
-
-      // 2. Nutzer Tabellenblatt
-      if (data.users && Array.isArray(data.users)) {
-        var sheetUsers = getOrCreateSheet(ss, "👥 Nutzer");
-        sheetUsers.clearContents();
-        
-        var userHeaders = ["Discord ID / ID", "Username / Name", "E-Mail", "Rolle", "Guthaben (EUR)", "Erstellt am", "Status", "Notizen"];
-        var userRows = [userHeaders];
-        
-        data.users.forEach(function(u) {
-          userRows.push([
-            u.discordId || u.id || "-",
-            u.username || u.name || "-",
-            u.email || "-",
-            (u.role || "kunde").toUpperCase(),
-            Number(u.balance || 0),
-            u.createdAt || "-",
-            u.isBlocked ? "🔴 Gesperrt" : (u.status || "🟢 Aktiv"),
-            u.notes || ""
-          ]);
-        });
-
-        writeAndFormatSheet(sheetUsers, userRows, "#1e1b4b", "#c084fc");
-        formatCurrencyColumn(sheetUsers, 5, userRows.length);
-      }
-
-      // 3. Bestellungen Tabellenblatt
-      if (data.orders && Array.isArray(data.orders)) {
-        var sheetOrders = getOrCreateSheet(ss, "📦 Bestellungen");
-        sheetOrders.clearContents();
-        
-        var orderHeaders = ["Bestell ID", "Kunde", "E-Mail", "Produkte", "Zahlungsart", "Gesamtsumme (EUR)", "Status", "Datum / Uhrzeit", "Ziel-Link"];
-        var orderRows = [orderHeaders];
-        
-        data.orders.forEach(function(o) {
-          var itemsStr = "";
-          if (o.items && Array.isArray(o.items)) {
-            itemsStr = o.items.map(function(i){ 
-              return (i.quantity || 1) + "x " + (i.title || i.name || "Artikel"); 
-            }).join("; ");
-          } else if (typeof o.items === "string") {
-            itemsStr = o.items;
-          }
-
-          orderRows.push([
-            o.id || "-",
-            o.customerName || o.userName || "-",
-            o.customerEmail || o.userEmail || "-",
-            itemsStr || "-",
-            (o.paymentMethod || "PayPal").toUpperCase(),
-            Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0)),
-            (o.status || "neu").toUpperCase(),
-            o.createdAt || o.date || "-",
-            o.targetLink || "-"
-          ]);
-        });
-
-        writeAndFormatSheet(sheetOrders, orderRows, "#0f172a", "#34d399");
-        formatCurrencyColumn(sheetOrders, 6, orderRows.length);
-      }
-
-      // 4. Produkte Tabellenblatt
-      if (data.products && Array.isArray(data.products)) {
-        var sheetProducts = getOrCreateSheet(ss, "🏷️ Produkte");
-        sheetProducts.clearContents();
-        
-        var productHeaders = ["Produkt ID", "Titel", "Kategorie", "Preis (EUR)", "Beliebtheit"];
-        var productRows = [productHeaders];
-        
-        data.products.forEach(function(p) {
-          productRows.push([
-            p.id || "-",
-            p.title || p.name || "-",
-            (p.category || "-").toUpperCase(),
-            Number(p.price !== undefined ? p.price : 0),
-            p.isPopular || p.popular ? "⭐ Beliebt" : "Standard"
-          ]);
-        });
-
-        writeAndFormatSheet(sheetProducts, productRows, "#064e3b", "#6ee7b7");
-        formatCurrencyColumn(sheetProducts, 4, productRows.length);
-      }
-
-      // 5. Support Tickets Tabellenblatt
-      if (data.tickets && Array.isArray(data.tickets)) {
-        var sheetTickets = getOrCreateSheet(ss, "🎧 Support Tickets");
-        sheetTickets.clearContents();
-        
-        var ticketHeaders = ["Ticket ID", "Kunde", "E-Mail", "Betreff", "Kategorie", "Priorität", "Status", "Erstellt am"];
-        var ticketRows = [ticketHeaders];
-        
-        data.tickets.forEach(function(t) {
-          ticketRows.push([
-            t.id || "-",
-            t.userName || "-",
-            t.userEmail || "-",
-            t.subject || "-",
-            (t.category || "Allgemein").toUpperCase(),
-            (t.priority || "mittel").toUpperCase(),
-            (t.status || "offen").toUpperCase(),
-            t.createdAt ? new Date(t.createdAt).toLocaleString("de-DE") : "-"
-          ]);
-        });
-
-        writeAndFormatSheet(sheetTickets, ticketRows, "#4c1d95", "#c084fc");
-      }
-
-      // 6. ResetCodes Tabellenblatt
-      if (data.resetCodes && Array.isArray(data.resetCodes)) {
-        var sheetReset = getOrCreateSheet(ss, "🔑 ResetCodes");
-        sheetReset.clearContents();
-        
-        var resetHeaders = ["Code", "User / E-Mail", "Erstellt am", "Ablaufdatum", "Einmalig", "Status"];
-        var resetRows = [resetHeaders];
-        
-        data.resetCodes.forEach(function(r) {
-          resetRows.push([
-            r.code || "-",
-            r.discordId || r.userId || r.userEmail || "-",
-            r.createdAt || "-",
-            r.expiresAt || "-",
-            r.isOneTime !== undefined ? (r.isOneTime ? "JA" : "NEIN") : "JA",
-            r.used || r.status === "used" || r.status === "Eingelöst" ? "🔴 Eingelöst" : "🟢 Aktiv"
-          ]);
-        });
-
-        writeAndFormatSheet(sheetReset, resetRows, "#312e81", "#a5b4fc");
-      }
-    }
-
-    if (data.singleEvent || (data.events && Array.isArray(data.events))) {
-      var eventSheet = getOrCreateSheet(ss, "⚡ Live Logs");
-      if (eventSheet.getLastRow() === 0) {
-        var eventHeaders = [["Zeitstempel", "Kategorie", "Aktion", "Beschreibung", "Benutzer / E-Mail", "Ergebnis"]];
-        eventSheet.getRange(1, 1, 1, 6).setValues(eventHeaders);
-        eventSheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#0284c7").setFontColor("#ffffff");
-      }
-
-      var eventsList = data.events || [data.singleEvent];
-      eventsList.forEach(function(ev) {
-        if (!ev) return;
-        eventSheet.appendRow([
-          ev.timestamp || new Date().toLocaleString("de-DE"),
-          (ev.category || "SYSTEM").toUpperCase(),
-          ev.actionName || ev.action || "Live-Aktion",
-          ev.description || ev.details || "-",
-          ev.userEmail || ev.userName || ev.performedBy || "-",
-          ev.result || "Erfolgreich"
-        ]);
-      });
-    }
-
-    return responseJSON({ 
-      status: "success", 
-      message: "Graviq Shop Daten erfolgreich in Google Sheet synchronisiert!",
-      syncedAt: new Date().toLocaleString("de-DE")
-    });
-
-  } catch (err) {
-    return responseJSON({ status: "error", message: err.toString() });
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function getOrCreateSheet(ss, sheetName) {
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-  }
-  return sheet;
-}
-
-function writeAndFormatSheet(sheet, rowsArray, headerBgColor, headerTextColor) {
-  if (!rowsArray || rowsArray.length === 0) return;
-  var numRows = rowsArray.length;
-  var numCols = rowsArray[0].length;
-  sheet.getRange(1, 1, numRows, numCols).setValues(rowsArray);
-  var headerRange = sheet.getRange(1, 1, 1, numCols);
-  headerRange.setFontWeight("bold").setBackground(headerBgColor).setFontColor(headerTextColor).setFontSize(11);
-  sheet.setFrozenRows(1);
-  for (var c = 1; c <= numCols; c++) {
-    sheet.autoResizeColumn(c);
-  }
-}
-
-function formatCurrencyColumn(sheet, colIndex, totalRows) {
-  if (totalRows <= 1) return;
-  sheet.getRange(2, colIndex, totalRows - 1, 1).setNumberFormat('€#,##0.00');
-}
-
-function updateKpiDashboard(ss, data) {
-  var sheetKpi = getOrCreateSheet(ss, "📊 Übersicht");
-  sheetKpi.clearContents();
-  var totalOrders = (data.orders && Array.isArray(data.orders)) ? data.orders.length : 0;
-  var totalUsers = (data.users && Array.isArray(data.users)) ? data.users.length : 0;
-  var totalProducts = (data.products && Array.isArray(data.products)) ? data.products.length : 0;
-  var openTickets = 0;
-  var totalRevenue = 0;
-
-  if (data.orders && Array.isArray(data.orders)) {
-    data.orders.forEach(function(o) {
-      var val = Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0));
-      if (!isNaN(val)) totalRevenue += val;
-    });
-  }
-
-  if (data.tickets && Array.isArray(data.tickets)) {
-    data.tickets.forEach(function(t) {
-      if (t.status === "offen" || t.status === "in_bearbeitung") openTickets++;
-    });
-  }
-
-  var dashboardRows = [
-    ["GRAVIQ SHOP - LIVE DATENBANK UND KPI ÜBERSICHT", ""],
-    ["Letzte Synchronisation:", new Date().toLocaleString("de-DE")],
-    ["", ""],
-    ["KPI Kennzahl", "Wert"],
-    ["Gesamt-Umsatz (EUR)", totalRevenue],
-    ["Anzahl Bestellungen", totalOrders],
-    ["Registrierte Kunden", totalUsers],
-    ["Aktive Produkte", totalProducts],
-    ["Offene Support Tickets", openTickets]
-  ];
-
-  sheetKpi.getRange(1, 1, dashboardRows.length, 2).setValues(dashboardRows);
-  sheetKpi.getRange("A1:B1").merge().setFontWeight("bold").setFontSize(14).setBackground("#0f172a").setFontColor("#38bdf8");
-  sheetKpi.getRange("A2:B2").setFontStyle("italic").setFontSize(10).setFontColor("#64748b");
-  sheetKpi.getRange("A4:B4").setFontWeight("bold").setBackground("#1e293b").setFontColor("#f1f5f9");
-  sheetKpi.getRange("B5").setNumberFormat('€#,##0.00').setFontWeight("bold");
-  sheetKpi.getRange("B6:B9").setFontWeight("bold");
-
-  sheetKpi.autoResizeColumn(1);
-  sheetKpi.autoResizeColumn(2);
-}
-
-function responseJSON(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}`;
-                      navigator.clipboard.writeText(snippet);
+                      navigator.clipboard.writeText(APPS_SCRIPT_FULL_CODE);
                       setCopiedScript(true);
                       setTimeout(() => setCopiedScript(false), 2000);
                     }}
@@ -939,50 +1066,7 @@ function responseJSON(obj) {
                     {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedScript ? 'Kopiert!' : 'Code Kopieren'}</span>
                   </button>
-                  <pre>{`/**
- * GRAVIQ SHOP - ULTRA GOOGLE SHEETS LIVE SYNC SCRIPT (v3.0)
- */
-
-function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({
-    status: "online",
-    service: "Graviq Shop Google Sheets Webhook API",
-    time: new Date().toLocaleString("de-DE"),
-    message: "Die Webhook-Schnittstelle ist aktiv und bereit zum Empfangen von Live-Daten!"
-  })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000); // Concurrency lock
-    if (!e || !e.postData || !e.postData.contents) {
-      return responseJSON({ status: "error", message: "Keine Daten empfangen." });
-    }
-
-    var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes || data.tickets) {
-      updateKpiDashboard(ss, data);
-      if (data.users) writeUsersSheet(ss, data.users);
-      if (data.orders) writeOrdersSheet(ss, data.orders);
-      if (data.products) writeProductsSheet(ss, data.products);
-      if (data.tickets) writeTicketsSheet(ss, data.tickets);
-      if (data.resetCodes) writeResetCodesSheet(ss, data.resetCodes);
-    }
-
-    if (data.singleEvent || data.events) {
-      appendLiveLogs(ss, data.events || [data.singleEvent]);
-    }
-
-    return responseJSON({ status: "success", syncedAt: new Date().toLocaleString("de-DE") });
-  } catch (err) {
-    return responseJSON({ status: "error", message: err.toString() });
-  } finally {
-    lock.releaseLock();
-  }
-}`}</pre>
+                  <pre className="max-h-80 overflow-y-auto whitespace-pre">{APPS_SCRIPT_FULL_CODE}</pre>
                 </div>
 
                 <ol start={4} className="list-decimal list-inside space-y-1.5 text-slate-300">
