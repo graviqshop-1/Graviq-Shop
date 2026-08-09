@@ -1022,22 +1022,25 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Automatic background debounced sync to Google Sheets Webhook on data changes
+  // Automatic background debounced sync to Google Sheets Webhook on data changes (1-second live timer)
   useEffect(() => {
     const appsScriptUrl = shopSettings.googleSheetsConfig?.appsScriptWebhookUrl;
     if (!appsScriptUrl || !appsScriptUrl.trim()) return;
 
     const timer = setTimeout(() => {
       triggerGoogleSheetsFullSync();
-    }, 2500);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [
     orders,
     allUsers,
+    currentUser,
     products,
     tickets,
     resetCodes,
+    supporterShifts,
+    productReviews,
     shopSettings.googleSheetsConfig?.appsScriptWebhookUrl,
   ]);
 
