@@ -41,8 +41,8 @@ export const UpdateReleaseNotesModal: React.FC = () => {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-slate-950 border border-indigo-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 relative shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-2 sm:p-6 flex items-center justify-center">
+      <div className="bg-slate-950 border border-indigo-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 relative shadow-2xl overflow-hidden my-auto max-h-[90vh] overflow-y-auto custom-scrollbar">
         {/* Glow Header Accent */}
         <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-purple-500 to-indigo-500" />
 

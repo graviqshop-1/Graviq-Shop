@@ -3,17 +3,20 @@ import { useShop } from '../context/ShopContext';
 import { Coins, Gift, Crown, Trophy, ArrowRight, X, Sparkles, Check, Zap, Wallet } from 'lucide-react';
 
 interface LoyaltyRewardsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export const LoyaltyRewardsModal: React.FC<LoyaltyRewardsModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, claimDailyReward, convertCoinsToBalance } = useShop();
+  const { currentUser, claimDailyReward, convertCoinsToBalance, loyaltyModalOpen, setLoyaltyModalOpen } = useShop();
 
   const [coinsToExchange, setCoinsToExchange] = useState<number>(100);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  if (!isOpen) return null;
+  const activeOpen = isOpen !== undefined ? isOpen : loyaltyModalOpen;
+  const activeClose = onClose || (() => setLoyaltyModalOpen(false));
+
+  if (!activeOpen) return null;
 
   const currentCoins = currentUser?.coins || 0;
   const currentBalance = currentUser?.balance || 0;
@@ -56,14 +59,14 @@ export const LoyaltyRewardsModal: React.FC<LoyaltyRewardsModalProps> = ({ isOpen
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-slate-950 border border-amber-500/30 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 relative shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-2 sm:p-6 flex items-center justify-center">
+      <div className="bg-slate-950 border border-amber-500/30 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 relative shadow-2xl overflow-hidden my-auto max-h-[90vh] overflow-y-auto custom-scrollbar">
         {/* Glow Header Accent */}
         <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-pink-500 to-indigo-600" />
 
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={activeClose}
           className="absolute top-5 right-5 text-slate-400 hover:text-white p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer transition-colors"
         >
           <X className="w-5 h-5" />

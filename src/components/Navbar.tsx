@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { GraviqLogo } from './GraviqLogo';
 import { InAppNotificationBell } from './InAppNotificationBell';
-import { LoyaltyRewardsModal } from './LoyaltyRewardsModal';
-import { UpdateReleaseNotesModal } from './UpdateReleaseNotesModal';
 import {
   ShoppingCart,
   User as UserIcon,
@@ -44,10 +42,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     shopSettings,
     notifications,
     setUpdateModalOpen,
+    setLoyaltyModalOpen,
   } = useShop();
 
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false);
 
   const cartTotalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -278,10 +276,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           );
         })}
       </div>
-
-      {/* Modals */}
-      <LoyaltyRewardsModal isOpen={loyaltyModalOpen} onClose={() => setLoyaltyModalOpen(false)} />
-      <UpdateReleaseNotesModal />
     </header>
   );
 };

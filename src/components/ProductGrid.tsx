@@ -196,8 +196,8 @@ export const ProductGrid: React.FC = () => {
 
       {/* Target Link Modal */}
       {modalPackage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-sm p-2 sm:p-6 flex items-center justify-center">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button
               onClick={() => setModalPackage(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold cursor-pointer"

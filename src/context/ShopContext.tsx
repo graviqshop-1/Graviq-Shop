@@ -188,9 +188,11 @@ interface ShopContextType {
   convertCoinsToBalance: (coinsToConvert: number) => { success: boolean; message: string };
   rateTicket: (ticketId: string, rating: number, comment?: string) => void;
 
-  // Update Announcement Modal
+  // Update Announcement & Loyalty Modals
   updateModalOpen: boolean;
   setUpdateModalOpen: (open: boolean) => void;
+  loyaltyModalOpen: boolean;
+  setLoyaltyModalOpen: (open: boolean) => void;
 
   // Auto Google Sheets Live Trigger & Event Staging
   triggerGoogleSheetsFullSync: () => Promise<void>;
@@ -288,6 +290,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cartOpen, setCartOpen] = useState(false);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false);
 
   // In-App Notifications State
   const [inAppNotifications, setInAppNotifications] = useState<InAppNotification[]>(() => {
@@ -2103,6 +2106,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setPartnerModalOpen,
         updateModalOpen,
         setUpdateModalOpen,
+        loyaltyModalOpen,
+        setLoyaltyModalOpen,
         inAppNotifications,
         addInAppNotification,
         markNotificationAsRead,

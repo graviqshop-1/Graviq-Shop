@@ -14,6 +14,8 @@ import { AccountResetModal } from './components/AccountResetModal';
 import { FaqModal } from './components/FaqModal';
 import { UserDashboard } from './components/UserDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
+import { LoyaltyRewardsModal } from './components/LoyaltyRewardsModal';
+import { UpdateReleaseNotesModal } from './components/UpdateReleaseNotesModal';
 import { MaintenanceOverlay } from './components/MaintenanceOverlay';
 import { BlockedOverlay } from './components/BlockedOverlay';
 import { Footer } from './components/Footer';
@@ -203,6 +205,12 @@ function MainShopView() {
 
       {/* Admin / Support Management Dashboard */}
       {adminOpen && <AdminDashboard onClose={() => setAdminOpen(false)} />}
+
+      {/* Loyalty & Rewards Coins Modal */}
+      <LoyaltyRewardsModal />
+
+      {/* Version Release Notes Update Modal */}
+      <UpdateReleaseNotesModal />
     </div>
   );
 }
