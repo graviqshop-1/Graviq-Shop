@@ -355,10 +355,14 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+            <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2 flex-wrap">
               Google Sheets Datenbank
               <span className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-extrabold uppercase">
                 AES-256 + Google Authenticator
+              </span>
+              <span className="bg-sky-950 text-sky-300 border border-sky-800 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-extrabold uppercase flex items-center gap-1">
+                <RefreshCw className="w-3 h-3 text-sky-400 animate-spin" />
+                30s Auto-Sync Live
               </span>
             </h3>
             <p className="text-xs text-slate-400">

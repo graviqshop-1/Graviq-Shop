@@ -635,6 +635,34 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     shopSettings.googleSheetsConfig?.appsScriptWebhookUrl,
   ]);
 
+  // Periodic 30-second background auto-sync to Google Sheets (Webhook or OAuth)
+  useEffect(() => {
+    const appsScriptUrl = shopSettings.googleSheetsConfig?.appsScriptWebhookUrl;
+    const sheetsAccessToken = localStorage.getItem('graviq_gsheets_token') || shopSettings.googleSheetsConfig?.accessToken;
+    const spreadsheetId = localStorage.getItem('graviq_gsheets_id') || shopSettings.googleSheetsConfig?.spreadsheetId;
+
+    const hasWebhook = Boolean(appsScriptUrl && appsScriptUrl.trim());
+    const hasOAuth = Boolean(sheetsAccessToken && spreadsheetId);
+
+    if (!hasWebhook && !hasOAuth) return;
+
+    const interval = setInterval(() => {
+      console.log('🔄 30s Periodic Live Google Sheets Auto-Sync executed');
+      triggerGoogleSheetsFullSync();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [
+    orders,
+    allUsers,
+    products,
+    tickets,
+    resetCodes,
+    shopSettings.googleSheetsConfig?.appsScriptWebhookUrl,
+    shopSettings.googleSheetsConfig?.accessToken,
+    shopSettings.googleSheetsConfig?.spreadsheetId,
+  ]);
+
   // Listen for Discord OAuth Callback postMessage from popup
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
