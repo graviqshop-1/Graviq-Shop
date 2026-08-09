@@ -582,51 +582,84 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      const snippet = `function doPost(e) {
+                      const snippet = `/**
+ * GRAVIQ SHOP - ULTRA GOOGLE SHEETS LIVE SYNC SCRIPT (v3.0)
+ * 
+ * ANLEITUNG:
+ * 1. Öffne deine Google Tabelle (Google Sheets)
+ * 2. Klicke oben auf: Erweiterungen -> Apps Script
+ * 3. Lösche den vorhandenen Code und füge diesen Code ein.
+ * 4. Klicke oben rechts auf "Bereitstellen" -> "Neue Bereitstellung"
+ * 5. Wähle Typ: "Web-App"
+ * 6. Ausführen als: "Ich" (Deine E-Mail)
+ * 7. Wer hat Zugriff: "Jeder" (Anyone) -> WICHTIG!
+ * 8. Klicke auf "Bereitstellen", erteile die Berechtigung und kopiere die Web-App URL in den Graviq Shop!
+ */
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "online",
+    service: "Graviq Shop Google Sheets Webhook API",
+    time: new Date().toLocaleString("de-DE"),
+    message: "Die Webhook-Schnittstelle ist aktiv und bereit zum Empfangen von Live-Daten!"
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
+    lock.waitLock(10000);
+    
     if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Keine Daten empfangen" }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return responseJSON({ status: "error", message: "Keine Daten empfangen." });
     }
 
-    var data = JSON.parse(e.postData.contents);
+    var data;
+    try {
+      data = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return responseJSON({ status: "error", message: "Ungültiges JSON Format: " + parseErr.toString() });
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes) {
+    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes || data.tickets) {
       
-      // 1. Nutzer Tabellenblatt
+      // 1. KPI Dashboard Tab
+      updateKpiDashboard(ss, data);
+
+      // 2. Nutzer Tabellenblatt
       if (data.users && Array.isArray(data.users)) {
-        var sheetUsers = ss.getSheetByName("Nutzer") || ss.insertSheet("Nutzer");
+        var sheetUsers = getOrCreateSheet(ss, "👥 Nutzer");
         sheetUsers.clearContents();
         
-        var userRows = [
-          ["Discord ID", "Username", "Rolle", "Guthaben (EUR)", "Erstellt am", "Status", "Notizen"]
-        ];
+        var userHeaders = ["Discord ID / ID", "Username / Name", "E-Mail", "Rolle", "Guthaben (EUR)", "Erstellt am", "Status", "Notizen"];
+        var userRows = [userHeaders];
         
         data.users.forEach(function(u) {
           userRows.push([
             u.discordId || u.id || "-",
             u.username || u.name || "-",
-            u.role || "user",
-            u.balance !== undefined ? u.balance : 0,
+            u.email || "-",
+            (u.role || "kunde").toUpperCase(),
+            Number(u.balance || 0),
             u.createdAt || "-",
-            u.isBlocked ? "Gesperrt" : (u.status || "Aktiv"),
-            u.notes || u.email || ""
+            u.isBlocked ? "🔴 Gesperrt" : (u.status || "🟢 Aktiv"),
+            u.notes || ""
           ]);
         });
 
-        sheetUsers.getRange(1, 1, userRows.length, userRows[0].length).setValues(userRows);
-        sheetUsers.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#1e1b4b").setFontColor("#c084fc");
+        writeAndFormatSheet(sheetUsers, userRows, "#1e1b4b", "#c084fc");
+        formatCurrencyColumn(sheetUsers, 5, userRows.length);
       }
 
-      // 2. Bestellungen Tabellenblatt
+      // 3. Bestellungen Tabellenblatt
       if (data.orders && Array.isArray(data.orders)) {
-        var sheetOrders = ss.getSheetByName("Bestellungen") || ss.insertSheet("Bestellungen");
+        var sheetOrders = getOrCreateSheet(ss, "📦 Bestellungen");
         sheetOrders.clearContents();
         
-        var orderRows = [
-          ["Bestell ID", "Kunde", "Email", "Produkte", "Gesamtsumme (EUR)", "Status", "Datum"]
-        ];
+        var orderHeaders = ["Bestell ID", "Kunde", "E-Mail", "Produkte", "Zahlungsart", "Gesamtsumme (EUR)", "Status", "Datum / Uhrzeit", "Ziel-Link"];
+        var orderRows = [orderHeaders];
         
         data.orders.forEach(function(o) {
           var itemsStr = "";
@@ -643,47 +676,71 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
             o.customerName || o.userName || "-",
             o.customerEmail || o.userEmail || "-",
             itemsStr || "-",
-            o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0),
-            o.status || "ausstehend",
-            o.createdAt || o.date || "-"
+            (o.paymentMethod || "PayPal").toUpperCase(),
+            Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0)),
+            (o.status || "neu").toUpperCase(),
+            o.createdAt || o.date || "-",
+            o.targetLink || "-"
           ]);
         });
 
-        sheetOrders.getRange(1, 1, orderRows.length, orderRows[0].length).setValues(orderRows);
-        sheetOrders.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#0f172a").setFontColor("#34d399");
+        writeAndFormatSheet(sheetOrders, orderRows, "#0f172a", "#34d399");
+        formatCurrencyColumn(sheetOrders, 6, orderRows.length);
       }
 
-      // 3. Produkte Tabellenblatt
+      // 4. Produkte Tabellenblatt
       if (data.products && Array.isArray(data.products)) {
-        var sheetProducts = ss.getSheetByName("Produkte") || ss.insertSheet("Produkte");
+        var sheetProducts = getOrCreateSheet(ss, "🏷️ Produkte");
         sheetProducts.clearContents();
         
-        var productRows = [
-          ["Produkt ID", "Titel", "Kategorie", "Preis (EUR)", "Status"]
-        ];
+        var productHeaders = ["Produkt ID", "Titel", "Kategorie", "Preis (EUR)", "Beliebtheit"];
+        var productRows = [productHeaders];
         
         data.products.forEach(function(p) {
           productRows.push([
             p.id || "-",
             p.title || p.name || "-",
-            p.category || "-",
-            p.price !== undefined ? p.price : 0,
-            p.isPopular || p.popular ? "Beliebt" : "Normal"
+            (p.category || "-").toUpperCase(),
+            Number(p.price !== undefined ? p.price : 0),
+            p.isPopular || p.popular ? "⭐ Beliebt" : "Standard"
           ]);
         });
 
-        sheetProducts.getRange(1, 1, productRows.length, productRows[0].length).setValues(productRows);
-        sheetProducts.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#064e3b").setFontColor("#6ee7b7");
+        writeAndFormatSheet(sheetProducts, productRows, "#064e3b", "#6ee7b7");
+        formatCurrencyColumn(sheetProducts, 4, productRows.length);
       }
 
-      // 4. ResetCodes Tabellenblatt
+      // 5. Support Tickets Tabellenblatt
+      if (data.tickets && Array.isArray(data.tickets)) {
+        var sheetTickets = getOrCreateSheet(ss, "🎧 Support Tickets");
+        sheetTickets.clearContents();
+        
+        var ticketHeaders = ["Ticket ID", "Kunde", "E-Mail", "Betreff", "Kategorie", "Priorität", "Status", "Erstellt am"];
+        var ticketRows = [ticketHeaders];
+        
+        data.tickets.forEach(function(t) {
+          ticketRows.push([
+            t.id || "-",
+            t.userName || "-",
+            t.userEmail || "-",
+            t.subject || "-",
+            (t.category || "Allgemein").toUpperCase(),
+            (t.priority || "mittel").toUpperCase(),
+            (t.status || "offen").toUpperCase(),
+            t.createdAt ? new Date(t.createdAt).toLocaleString("de-DE") : "-"
+          ]);
+        });
+
+        writeAndFormatSheet(sheetTickets, ticketRows, "#4c1d95", "#c084fc");
+      }
+
+      // 6. ResetCodes Tabellenblatt
       if (data.resetCodes && Array.isArray(data.resetCodes)) {
-        var sheetReset = ss.getSheetByName("ResetCodes") || ss.insertSheet("ResetCodes");
+        var sheetReset = getOrCreateSheet(ss, "🔑 ResetCodes");
         sheetReset.clearContents();
         
-        var resetRows = [
-          ["Code", "Discord ID / User", "Erstellt am", "Ablaufdatum", "Einmalig", "Status"]
-        ];
+        var resetHeaders = ["Code", "User / E-Mail", "Erstellt am", "Ablaufdatum", "Einmalig", "Status"];
+        var resetRows = [resetHeaders];
         
         data.resetCodes.forEach(function(r) {
           resetRows.push([
@@ -692,25 +749,122 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
             r.createdAt || "-",
             r.expiresAt || "-",
             r.isOneTime !== undefined ? (r.isOneTime ? "JA" : "NEIN") : "JA",
-            r.used || r.status === "used" || r.status === "Eingelöst" ? "Eingelöst" : "Aktiv"
+            r.used || r.status === "used" || r.status === "Eingelöst" ? "🔴 Eingelöst" : "🟢 Aktiv"
           ]);
         });
 
-        sheetReset.getRange(1, 1, resetRows.length, resetRows[0].length).setValues(resetRows);
-        sheetReset.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#312e81").setFontColor("#a5b4fc");
+        writeAndFormatSheet(sheetReset, resetRows, "#312e81", "#a5b4fc");
       }
-
-      return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Daten erfolgreich synchronisiert" }))
-        .setMimeType(ContentService.MimeType.JSON);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Event verarbeitet" }))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (data.singleEvent || (data.events && Array.isArray(data.events))) {
+      var eventSheet = getOrCreateSheet(ss, "⚡ Live Logs");
+      if (eventSheet.getLastRow() === 0) {
+        var eventHeaders = [["Zeitstempel", "Kategorie", "Aktion", "Beschreibung", "Benutzer / E-Mail", "Ergebnis"]];
+        eventSheet.getRange(1, 1, 1, 6).setValues(eventHeaders);
+        eventSheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#0284c7").setFontColor("#ffffff");
+      }
+
+      var eventsList = data.events || [data.singleEvent];
+      eventsList.forEach(function(ev) {
+        if (!ev) return;
+        eventSheet.appendRow([
+          ev.timestamp || new Date().toLocaleString("de-DE"),
+          (ev.category || "SYSTEM").toUpperCase(),
+          ev.actionName || ev.action || "Live-Aktion",
+          ev.description || ev.details || "-",
+          ev.userEmail || ev.userName || ev.performedBy || "-",
+          ev.result || "Erfolgreich"
+        ]);
+      });
+    }
+
+    return responseJSON({ 
+      status: "success", 
+      message: "Graviq Shop Daten erfolgreich in Google Sheet synchronisiert!",
+      syncedAt: new Date().toLocaleString("de-DE")
+    });
 
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return responseJSON({ status: "error", message: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
+}
+
+function getOrCreateSheet(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+  return sheet;
+}
+
+function writeAndFormatSheet(sheet, rowsArray, headerBgColor, headerTextColor) {
+  if (!rowsArray || rowsArray.length === 0) return;
+  var numRows = rowsArray.length;
+  var numCols = rowsArray[0].length;
+  sheet.getRange(1, 1, numRows, numCols).setValues(rowsArray);
+  var headerRange = sheet.getRange(1, 1, 1, numCols);
+  headerRange.setFontWeight("bold").setBackground(headerBgColor).setFontColor(headerTextColor).setFontSize(11);
+  sheet.setFrozenRows(1);
+  for (var c = 1; c <= numCols; c++) {
+    sheet.autoResizeColumn(c);
+  }
+}
+
+function formatCurrencyColumn(sheet, colIndex, totalRows) {
+  if (totalRows <= 1) return;
+  sheet.getRange(2, colIndex, totalRows - 1, 1).setNumberFormat('€#,##0.00');
+}
+
+function updateKpiDashboard(ss, data) {
+  var sheetKpi = getOrCreateSheet(ss, "📊 Übersicht");
+  sheetKpi.clearContents();
+  var totalOrders = (data.orders && Array.isArray(data.orders)) ? data.orders.length : 0;
+  var totalUsers = (data.users && Array.isArray(data.users)) ? data.users.length : 0;
+  var totalProducts = (data.products && Array.isArray(data.products)) ? data.products.length : 0;
+  var openTickets = 0;
+  var totalRevenue = 0;
+
+  if (data.orders && Array.isArray(data.orders)) {
+    data.orders.forEach(function(o) {
+      var val = Number(o.totalAmount !== undefined ? o.totalAmount : (o.totalPrice !== undefined ? o.totalPrice : 0));
+      if (!isNaN(val)) totalRevenue += val;
+    });
+  }
+
+  if (data.tickets && Array.isArray(data.tickets)) {
+    data.tickets.forEach(function(t) {
+      if (t.status === "offen" || t.status === "in_bearbeitung") openTickets++;
+    });
+  }
+
+  var dashboardRows = [
+    ["GRAVIQ SHOP - LIVE DATENBANK UND KPI ÜBERSICHT", ""],
+    ["Letzte Synchronisation:", new Date().toLocaleString("de-DE")],
+    ["", ""],
+    ["KPI Kennzahl", "Wert"],
+    ["Gesamt-Umsatz (EUR)", totalRevenue],
+    ["Anzahl Bestellungen", totalOrders],
+    ["Registrierte Kunden", totalUsers],
+    ["Aktive Produkte", totalProducts],
+    ["Offene Support Tickets", openTickets]
+  ];
+
+  sheetKpi.getRange(1, 1, dashboardRows.length, 2).setValues(dashboardRows);
+  sheetKpi.getRange("A1:B1").merge().setFontWeight("bold").setFontSize(14).setBackground("#0f172a").setFontColor("#38bdf8");
+  sheetKpi.getRange("A2:B2").setFontStyle("italic").setFontSize(10).setFontColor("#64748b");
+  sheetKpi.getRange("A4:B4").setFontWeight("bold").setBackground("#1e293b").setFontColor("#f1f5f9");
+  sheetKpi.getRange("B5").setNumberFormat('€#,##0.00').setFontWeight("bold");
+  sheetKpi.getRange("B6:B9").setFontWeight("bold");
+
+  sheetKpi.autoResizeColumn(1);
+  sheetKpi.autoResizeColumn(2);
+}
+
+function responseJSON(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }`;
                       navigator.clipboard.writeText(snippet);
                       setCopiedScript(true);
@@ -721,60 +875,48 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
                     {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedScript ? 'Kopiert!' : 'Code Kopieren'}</span>
                   </button>
-                  <pre>{`function doPost(e) {
+                  <pre>{`/**
+ * GRAVIQ SHOP - ULTRA GOOGLE SHEETS LIVE SYNC SCRIPT (v3.0)
+ */
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "online",
+    service: "Graviq Shop Google Sheets Webhook API",
+    time: new Date().toLocaleString("de-DE"),
+    message: "Die Webhook-Schnittstelle ist aktiv und bereit zum Empfangen von Live-Daten!"
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    lock.waitLock(10000); // Concurrency lock
+    if (!e || !e.postData || !e.postData.contents) {
+      return responseJSON({ status: "error", message: "Keine Daten empfangen." });
+    }
+
     var data = JSON.parse(e.postData.contents);
-    
-    // Tab 1: Log Events
-    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-      var eventSheet = ss.getSheetByName("Graviq Log Events") || ss.insertSheet("Graviq Log Events");
-      if (eventSheet.getLastRow() === 0) {
-        eventSheet.appendRow(["Zeitstempel", "Kategorie", "Aktion", "Beschreibung", "Benutzer / E-Mail"]);
-        eventSheet.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#1e293b").setFontColor("#38bdf8");
-      }
-      data.events.forEach(function(ev) {
-        eventSheet.appendRow([
-          ev.timestamp || new Date().toLocaleString("de-DE"),
-          ev.category ? ev.category.toUpperCase() : "SYSTEM",
-          ev.actionName || "Live Aktion",
-          ev.description || "-",
-          ev.userEmail || ev.payload?.email || "-"
-        ]);
-      });
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (data.action === "sync_all" || data.users || data.orders || data.products || data.resetCodes || data.tickets) {
+      updateKpiDashboard(ss, data);
+      if (data.users) writeUsersSheet(ss, data.users);
+      if (data.orders) writeOrdersSheet(ss, data.orders);
+      if (data.products) writeProductsSheet(ss, data.products);
+      if (data.tickets) writeTicketsSheet(ss, data.tickets);
+      if (data.resetCodes) writeResetCodesSheet(ss, data.resetCodes);
     }
 
-    // Tab 2: Single Live Event
-    if (data.singleEvent) {
-      var ev = data.singleEvent;
-      var eventSheet = ss.getSheetByName("Graviq Log Events") || ss.insertSheet("Graviq Log Events");
-      if (eventSheet.getLastRow() === 0) {
-        eventSheet.appendRow(["Zeitstempel", "Kategorie", "Aktion", "Beschreibung", "Benutzer / E-Mail"]);
-        eventSheet.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#1e293b").setFontColor("#38bdf8");
-      }
-      eventSheet.appendRow([
-        ev.timestamp || new Date().toLocaleString("de-DE"),
-        ev.category ? ev.category.toUpperCase() : "SYSTEM",
-        ev.actionName || "Live Aktion",
-        ev.description || "-",
-        ev.userEmail || ev.payload?.email || "-"
-      ]);
+    if (data.singleEvent || data.events) {
+      appendLiveLogs(ss, data.events || [data.singleEvent]);
     }
 
-    // Tab 3: Bestellungen (Direkte Tabelle)
-    if (data.orders && Array.isArray(data.orders)) {
-      var orderSheet = ss.getSheetByName("Bestellungen") || ss.insertSheet("Bestellungen");
-      orderSheet.clearContents();
-      orderSheet.appendRow(["Bestell-ID", "Datum", "Kunde", "E-Mail", "Paket", "Betrag (€)", "Status"]);
-      orderSheet.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#0f172a").setFontColor("#34d399");
-      data.orders.forEach(function(o) {
-        orderSheet.appendRow([o.id, o.date, o.customerName, o.email, o.packageName, o.amount, o.status]);
-      });
-    }
-
-    return ContentService.createTextOutput("SUCCESS");
-  } catch(err) {
-    return ContentService.createTextOutput("ERROR: " + err.toString());
+    return responseJSON({ status: "success", syncedAt: new Date().toLocaleString("de-DE") });
+  } catch (err) {
+    return responseJSON({ status: "error", message: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
 }`}</pre>
                 </div>

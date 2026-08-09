@@ -616,6 +616,25 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Automatic background debounced sync to Google Sheets Webhook on data changes
+  useEffect(() => {
+    const appsScriptUrl = shopSettings.googleSheetsConfig?.appsScriptWebhookUrl;
+    if (!appsScriptUrl || !appsScriptUrl.trim()) return;
+
+    const timer = setTimeout(() => {
+      triggerGoogleSheetsFullSync();
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [
+    orders,
+    allUsers,
+    products,
+    tickets,
+    resetCodes,
+    shopSettings.googleSheetsConfig?.appsScriptWebhookUrl,
+  ]);
+
   // Listen for Discord OAuth Callback postMessage from popup
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
