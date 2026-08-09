@@ -53,6 +53,7 @@ import {
   CopyCheck,
   Unlock,
   KeyRound,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { OrderStatus, Ticket, SeasonTheme, PartnerApplication, UserRole, Order, ServicePackage, PlatformId } from '../types';
 import { InvoiceModal } from './InvoiceModal';
@@ -122,7 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
 
   // Default active tab based on role
   const [activeTab, setActiveTab] = useState<
-    'analytics' | 'products' | 'orders' | 'tickets' | 'events' | 'partners' | 'archive' | 'support_team' | 'coupons' | 'settings' | 'order_lookup' | 'security' | 'user_management'
+    'analytics' | 'products' | 'orders' | 'tickets' | 'events' | 'partners' | 'archive' | 'support_team' | 'coupons' | 'settings' | 'order_lookup' | 'security' | 'user_management' | 'google_sheets'
   >(
     isAdmin ? 'analytics' : isTeamGraviq ? 'orders' : 'tickets'
   );
@@ -748,6 +749,28 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                   </button>
 
                   <button
+                    onClick={() => setActiveTab('google_sheets')}
+                    className={`w-full p-2.5 rounded-2xl text-xs font-bold flex items-center transition-all cursor-pointer ${
+                      isSidebarCollapsed ? 'justify-center' : 'justify-start gap-3'
+                    } ${
+                      activeTab === 'google_sheets'
+                        ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 shadow-md'
+                        : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                    }`}
+                    title="Google Sheets & Live DB Sync"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
+                    {!isSidebarCollapsed && (
+                      <div className="flex justify-between items-center w-full truncate">
+                        <span className="truncate">Google Sheets DB</span>
+                        <span className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                          Echtzeit ⚡
+                        </span>
+                      </div>
+                    )}
+                  </button>
+
+                  <button
                     onClick={() => setActiveTab('security')}
                     className={`w-full p-2.5 rounded-2xl text-xs font-bold flex items-center transition-all cursor-pointer ${
                       isSidebarCollapsed ? 'justify-center' : 'justify-start gap-3'
@@ -842,6 +865,7 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                   {activeTab === 'coupons' && '🏷️ Gutscheine & Rabattcodes'}
                   {activeTab === 'support_team' && '👥 Team & Supporter Verwaltung'}
                   {activeTab === 'security' && '🛡️ IP Blocker & Anti-Spam Security Center'}
+                  {activeTab === 'google_sheets' && '📊 Google Sheets Datenbank & Webhook Sync'}
                   {activeTab === 'settings' && '⚙️ System- & Shop-Einstellungen'}
                 </h2>
                 <p className="text-xs text-slate-400 hidden sm:block">
@@ -2297,6 +2321,13 @@ Exportiert von Graviq Console am ${new Date().toLocaleString('de-DE')}
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* GOOGLE SHEETS LIVE DB TAB (Admin & Team Graviq) */}
+            {(isAdmin || effectiveRole === 'admin' || effectiveRole === 'team_graviq') && activeTab === 'google_sheets' && (
+              <div className="space-y-6">
+                <GoogleSheetsSecurityModule />
               </div>
             )}
 

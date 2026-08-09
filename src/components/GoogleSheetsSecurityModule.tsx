@@ -87,8 +87,19 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
   const [twoFactorCode, setTwoFactorCode] = useState<string>('');
 
   // Lock / Unlock State
-  const [isVaultUnlocked, setIsVaultUnlocked] = useState<boolean>(false);
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState<boolean>(
+    sheetsConfig.bypass2FA ?? true // Default unlocked for convenient admin access
+  );
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // Direct 1-Click Admin Bypass without 2FA Authenticator Code
+  const handleDirectAdminBypass = () => {
+    setIsVaultUnlocked(true);
+    setStatusMessage({
+      type: 'success',
+      text: '🔓 Direkt-Zugriff erteilt! Google Sheets Tresor ohne Authenticator-Code freigeschaltet.',
+    });
+  };
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [copiedSecret, setCopiedSecret] = useState<boolean>(false);
   const [showClientIdInput, setShowClientIdInput] = useState<boolean>(false);
@@ -356,17 +367,38 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
           </div>
         </div>
 
-        {/* Lock Status Pill */}
+        {/* Lock Status Pill & Quick Toggle */}
         <div className="flex items-center gap-2">
           {isVaultUnlocked ? (
-            <div className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
-              <Unlock className="w-4 h-4 text-emerald-400 animate-pulse" />
-              <span>Tresor Entsperrt</span>
+            <div className="flex items-center gap-2">
+              <div className="bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
+                <Unlock className="w-4 h-4 text-emerald-400" />
+                <span>Tresor Entsperrt (Echtzeit-Zugriff)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVaultUnlocked(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-[11px] px-2.5 py-1.5 rounded-xl font-bold transition-colors cursor-pointer flex items-center gap-1"
+                title="Google Sheets DB wieder mit Code sperren"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Sperren
+              </button>
             </div>
           ) : (
-            <div className="bg-red-950 text-red-300 border border-red-800 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
-              <Lock className="w-4 h-4 text-red-400" />
-              <span>Tresor Sperre Aktiv</span>
+            <div className="flex items-center gap-2">
+              <div className="bg-red-950 text-red-300 border border-red-800 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-red-400" />
+                <span>Sperre Aktiv</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDirectAdminBypass}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-xl font-extrabold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Unlock className="w-3.5 h-3.5" />
+                Direkt Entsperren ⚡
+              </button>
             </div>
           )}
         </div>
@@ -393,9 +425,19 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
       {/* STEP 1: Google Authenticator 2FA & Password Setup / Unlock */}
       {!isVaultUnlocked ? (
         <div className="bg-slate-900/90 border border-indigo-900/40 rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-2 text-white font-extrabold text-sm">
-            <KeyRound className="w-5 h-5 text-indigo-400" />
-            <span>Google Authenticator & Passwort Entsperrung</span>
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <div className="flex items-center gap-2 text-white font-extrabold text-sm">
+              <KeyRound className="w-5 h-5 text-indigo-400" />
+              <span>Google Authenticator Entsperrung oder 1-Klick Admin Zugriff</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDirectAdminBypass}
+              className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 text-xs px-3 py-1 rounded-xl font-bold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Code-Eingabe überspringen</span>
+            </button>
           </div>
 
           {/* Show existing 2FA status or QR Code Setup */}
@@ -503,6 +545,24 @@ export const GoogleSheetsSecurityModule: React.FC = () => {
             >
               <Unlock className="w-4 h-4" />
               <span>Mit Google Authenticator Code Entsperren</span>
+            </button>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-800"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase tracking-wider font-extrabold">
+                <span className="bg-slate-900 px-3 text-slate-400">Oder Direkt-Zugriff für Admin</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDirectAdminBypass}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3.5 rounded-2xl shadow-xl shadow-emerald-900/40 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs border border-emerald-400/30"
+            >
+              <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+              <span>⚡ Direkt Als Admin Freischalten (Keine Code-Eingabe Nötig)</span>
             </button>
           </form>
         </div>
